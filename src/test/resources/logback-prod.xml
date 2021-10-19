@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <appender name="LogtailHttp" class="com.logtail.logback.LogtailAppender">
+        <appName>LogtailTest</appName>
+        <ingestKey>${LOGTAIL_INGEST_KEY}</ingestKey>
+        <mdcFields>requestId,requestTime</mdcFields>
+        <mdcTypes>string,int</mdcTypes>
+    </appender>
+
+    <appender name="Logtail" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="LogtailHttp" />
+        <queueSize>500</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <includeCallerData>true</includeCallerData>
+    </appender>
+
+    <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm} %-5level %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="Logtail" />
+        <appender-ref ref="Console" />
+    </root>
+
+</configuration>

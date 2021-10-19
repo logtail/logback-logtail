@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <appender name="LogtailHttp" class="com.logtail.logback.LogtailAppender">
+        <encoder>
+            <pattern>[%thread] %msg%n</pattern>
+        </encoder>
+        <appName>LogtailTest</appName>
+        <ingestKey></ingestKey>
+        <mdcFields>requestId,requestTime</mdcFields>
+        <mdcTypes>string,int</mdcTypes>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="LogtailHttp" />
+    </root>
+
+</configuration>

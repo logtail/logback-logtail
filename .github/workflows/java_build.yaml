@@ -1,0 +1,40 @@
+name: Java Build
+on:
+   push:
+      branches:
+      - master
+   pull_request:
+      types:
+      - opened
+      - synchronize
+      - reopened
+jobs:
+   build:
+      runs-on: ubuntu-latest
+      steps:
+      -  name: Checkout project
+         uses: actions/checkout@v2
+         with:
+            fetch-depth: 0
+      -  name: Set up JDK
+         uses: actions/setup-java@v1
+         with:
+            java-version: 8
+      -  name: Cache Maven packages
+         uses: actions/cache@v1
+         with:
+            path: ~/.m2
+            key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+            restore-keys: ${{ runner.os }}-m2
+      -  name: Build with Maven on Java 8
+         run: mvn -B clean package --file pom.xml
+         env:
+            LOGTAIL_INGEST_KEY: ${{ secrets.LOGTAIL_INGEST_KEY }}
+      -  name: Set up JDK
+         uses: actions/setup-java@v1
+         with:
+            java-version: 11
+      -  name: Build with Maven on Java 8
+         run: mvn -B clean package --file pom.xml
+         env:
+            LOGTAIL_INGEST_KEY: ${{ secrets.LOGTAIL_INGEST_KEY }}

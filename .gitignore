@@ -1,0 +1,11 @@
+target
+bin
+.DS_Store
+.DS_Store?
+.classpath
+.project
+.settings
+.metadata
+.idea
+*~
+/src/test/resources/logback-test.xml
