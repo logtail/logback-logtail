@@ -165,8 +165,6 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
      */
     protected ArrayList<Object> buildPostData(ILoggingEvent event) {
         Map<String, Object> line = new HashMap<>();
-        
-        errorLog.info(String.format("dt: %s", event.getTimeStamp()));
 
         line.put("dt", Long.toString(event.getTimeStamp()));
         line.put("level", event.getLevel().toString());
