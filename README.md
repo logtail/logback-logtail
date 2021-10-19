@@ -25,7 +25,7 @@ First, copy this dependency into your `pom.xml` file.
 
 Add Logback to your dependencies, and if you don't already have one in your project, add a JAX-RS implementation into your `pom.xml` like https://search.maven.org/artifact/org.glassfish.jersey.core/jersey-client[Jersey] (the one used in the unit tests), https://search.maven.org/artifact/org.jboss.resteasy/resteasy-client[RESTEasy] or https://search.maven.org/artifact/org.apache.cxf/cxf-rt-rs-client[Apache CXF].
 
-For example:
+Example dependencies:
 
 ```xml
 <dependency>
@@ -115,6 +115,9 @@ Finally, you have to provide a `LOGTAIL_INGEST_KEY`, an API key you'll find in t
     
     <!-- ... -->
   </appender>
+  
+  <!-- ... -->
+</configuration>
 ```
 
 * Set up comma-separated MDC keys to index (from the MDC thread local binding).
