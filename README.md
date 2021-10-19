@@ -23,7 +23,7 @@ First, copy this dependency into your `pom.xml` file.
 </dependency>
 ```
 
-Add Logback to your dependencies, and if you don't already have one in your project, add a JAX-RS implementation into your `pom.xml` like https://search.maven.org/artifact/org.glassfish.jersey.core/jersey-client[Jersey] (the one used in the unit tests), https://search.maven.org/artifact/org.jboss.resteasy/resteasy-client[RESTEasy] or https://search.maven.org/artifact/org.apache.cxf/cxf-rt-rs-client[Apache CXF].
+Add Logback to your dependencies, and if you don't already have one in your project, add a JAX-RS implementation into your `pom.xml` like [Jersey](https://search.maven.org/artifact/org.glassfish.jersey.core/jersey-client), which is the one we use in the unit tests, [RESTEasy](https://search.maven.org/artifact/org.jboss.resteasy/resteasy-client) or [Apache CXF](https://search.maven.org/artifact/org.apache.cxf/cxf-rt-rs-client).
 
 Example dependencies:
 
@@ -121,7 +121,7 @@ Finally, you have to provide a `LOGTAIL_INGEST_KEY`, an API key you'll find in t
 ```
 
 * Set up comma-separated MDC keys to index (from the MDC thread local binding).
-* Set up one type for each MDC key. Possible types are string, boolean, int and long. The last two result in an indexed number in your LogDNA console, which is rather interesting, as it will allow you some functions inside your graphs (sum, average, etc...).
+* Set up one type for each MDC key. Possible types are string, boolean, int and long. The last two result in an indexed number in your Logtail console. You can then use these values as metrics and create Grafana dashboards around those.
 * You can try to set up a specific `connectTimeout` and `readTimeout` for the underlying JAX-RS client.
 
 ### JSON parameters parsing
