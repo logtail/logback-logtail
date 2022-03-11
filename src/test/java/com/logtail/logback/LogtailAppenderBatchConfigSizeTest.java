@@ -33,8 +33,7 @@ public class LogtailAppenderBatchConfigSizeTest {
 
         JoranConfigurator configurator = new JoranConfigurator();
         configurator.setContext(loggerContext);
-//        configurator.doConfigure("src/test/resources/logback-batch-test.xml");
-        configurator.doConfigure("/Users/cosmin/work/3rdparty/logback-logtail/src/test/resources/logback-batch-test.xml");
+        configurator.doConfigure("src/test/resources/logback-batch-test.xml");
 
         Logger rootLogger = (Logger) LoggerFactory.getLogger("ROOT");
         AsyncAppender asyncAppender = (AsyncAppender) rootLogger.getAppender("Logtail");
