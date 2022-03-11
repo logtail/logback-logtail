@@ -100,6 +100,8 @@ Then, copy the following two Logtail appenders to your `classpath:/logback.xml` 
 ```
 
 Finally, you have to provide a `LOGTAIL_INGEST_KEY`, an API key you'll find in the Logtail console when creating a source. If you don't provide an API key, the appender will be automatically disabled (with a warning).
+
+The `queueSize` and `discardingThreshold` are native Logback AsyncAppender attributes. Read the [official docs](https://logback.qos.ch/manual/appenders.html#AsyncAppender) to learn more.
     
 
 ### Configuration options
