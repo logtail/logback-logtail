@@ -1,26 +1,24 @@
 package com.logtail.logback;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-
-import javax.ws.rs.ProcessingException;
-
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.joran.JoranConfigurator;
+import ch.qos.logback.core.joran.spi.JoranException;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.LoggerContext;
-import ch.qos.logback.classic.joran.JoranConfigurator;
-import ch.qos.logback.core.joran.spi.JoranException;
+import javax.ws.rs.ProcessingException;
+import java.util.UUID;
+
+import static org.junit.Assert.*;
 
 /**
  * ! One LOGTAIL_INGEST_KEY must be set as an environment variable before launching the test !
- * 
+ *
+ *
  * @author tomas@logtail.com
  */
 public class LogtailAppenderIntegrationTest {
@@ -64,6 +62,7 @@ public class LogtailAppenderIntegrationTest {
         MDC.put("requestId", "testInfoLog");
         MDC.put("requestTime", "123");
         this.logger.info("I am Groot");
+        this.appender.flush();
         isOk();
     }
 
@@ -72,6 +71,7 @@ public class LogtailAppenderIntegrationTest {
         MDC.put("requestId", "testJsonLog");
         MDC.put("requestTime", "456");
         this.logger.info("I am { \"name\": \"Groot\", \"id\": \"GROOT\" }");
+        this.appender.flush();
         isOk();
     }
 
@@ -80,6 +80,7 @@ public class LogtailAppenderIntegrationTest {
         MDC.put("requestId", "testWarnLog");
         MDC.put("requestTime", "666");
         this.logger.warn("I AM groot");
+        this.appender.flush();
         isOk();
     }
 
@@ -88,6 +89,32 @@ public class LogtailAppenderIntegrationTest {
         MDC.put("requestId", "testErrorLog");
         MDC.put("requestTime", "789");
         this.logger.error("I am Groot?", new RuntimeException("GROOT!"));
+        this.appender.flush();
+        isOk();
+    }
+
+    @Test
+    public void testBatchDefaultBatchSize() {
+        // This is to easily identify and diagnose messages coming from the same test run
+        String batchRunId = UUID.randomUUID().toString().toLowerCase().replace("-", "");
+
+        for (int i = 0; i < 500; i++) {
+            MDC.put("requestId", "testErrorLog");
+            MDC.put("requestTime", i + "");
+            this.logger.info(batchRunId + " Batch Groot " + i);
+            assertEquals(0, this.appender.apiCalls);
+        }
+        for (int i = 0; i < 499; i++) {
+            MDC.put("requestId", "testErrorLog");
+            MDC.put("requestTime", (500 + i) + "");
+            this.logger.info(batchRunId + " Batch Groot " + (500 + i));
+            assertEquals(0, this.appender.apiCalls);
+        }
+        MDC.put("requestId", "testErrorLog");
+        MDC.put("requestTime", 999 + "");
+        this.logger.info(batchRunId + " Final Batch Groot ");
+        assertEquals(1, this.appender.apiCalls);
+
         isOk();
     }
 
@@ -95,6 +122,7 @@ public class LogtailAppenderIntegrationTest {
     public void testConnectTimeout() {
         this.appender.setConnectTimeout(2L);
         this.logger.error("I am no Groot");
+        this.appender.flush();
         assertTrue(appender.hasException());
         assertTrue(ProcessingException.class.isInstance(appender.getException()));
         assertNotNull(appender.getException().getCause());
@@ -106,6 +134,7 @@ public class LogtailAppenderIntegrationTest {
     public void testReadTimeout() {
         this.appender.setReadTimeout(2L);
         this.logger.error("I am no Groot");
+        this.appender.flush();
         assertTrue(appender.hasException());
         assertTrue(ProcessingException.class.isInstance(appender.getException()));
         assertNotNull(appender.getException().getCause());

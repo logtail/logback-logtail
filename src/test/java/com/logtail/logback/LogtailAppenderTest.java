@@ -1,23 +1,16 @@
 package com.logtail.logback;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-
-import java.util.Collection;
-import java.util.ArrayList;
-import java.util.Map;
-
-import org.junit.Test;
-import org.slf4j.MDC;
-
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.LoggingEvent;
+import org.junit.Test;
+import org.slf4j.MDC;
+
+import java.util.Map;
+
+import static org.junit.Assert.*;
 
 public class LogtailAppenderTest {
 
@@ -35,7 +28,7 @@ public class LogtailAppenderTest {
         MDC.put("field5", "456");
 
         Logger logger = new LoggerContext().getLogger(Logger.ROOT_LOGGER_NAME);
-        ILoggingEvent ev = new LoggingEvent(Logger.FQCN, logger, Level.INFO, "My log message", null, new Object[] {});
+        ILoggingEvent ev = new LoggingEvent(Logger.FQCN, logger, Level.INFO, "My log message", null, new Object[]{});
 
         // Self instantiated appender
         LogtailAppender appender = new LogtailAppender();
@@ -44,14 +37,11 @@ public class LogtailAppenderTest {
         appender.setMdcTypes("string,int,boolean,long");
 
         // Build up future-JSON data
-        ArrayList<Object> postData = appender.buildPostData(ev);
+        Map<String, Object> postData = appender.buildPostData(ev);
 
         assertNotNull(postData);
-        assertEquals(1, postData.size());
-        assertNotNull(postData.get(0));
 
-        Map<String, Object> event = (Map<String, Object>) postData.get(0);
-        assertEventData(ev, event);
+        assertEventData(ev, postData);
     }
 
     @SuppressWarnings("unchecked")
