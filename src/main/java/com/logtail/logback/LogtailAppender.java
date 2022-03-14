@@ -1,15 +1,14 @@
 package com.logtail.logback;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.concurrent.TimeUnit;
-import java.lang.StackTraceElement;
+import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.UnsynchronizedAppenderBase;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
@@ -19,23 +18,14 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
-
-import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.UnsynchronizedAppenderBase;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * Logback appender for sending logs to <a href="https://logtail.com">logtail.com</a>.
- * 
+ *
  * @author tomas@logtail.com
  */
 public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
@@ -67,6 +57,11 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected long connectTimeout = 5000;
 
     protected long readTimeout = 10000;
+
+    private int batchSize = 1000;
+
+    private List<ILoggingEvent> batch = new ArrayList<>();
+
 
     /**
      * Appender initialization.
@@ -115,8 +110,21 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             return;
         }
 
+        appendToBatch(event);
+
+    }
+
+    private void appendToBatch(ILoggingEvent event) {
+        batch.add(event);
+
+        if (batch.size() >= batchSize) {
+            flush();
+        }
+    }
+
+    protected void flush() {
         try {
-            String jsonData = convertLogEventToJson(event);
+            String jsonData = convertLogEventsToJson(batch);
 
             Response response = callIngestApi(jsonData);
 
@@ -125,17 +133,20 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
                 errorLog.error("Error calling Logtail : {} ({})", logtailResponse.getError(), response.getStatus());
             }
 
+            batch.clear();
         } catch (JsonProcessingException e) {
             errorLog.error("Error processing JSON data : {}", e.getMessage());
 
         } catch (Exception e) {
             errorLog.error("Error trying to call Logtail : {}", e.getMessage());
         }
-
     }
 
-    protected String convertLogEventToJson(ILoggingEvent event) throws JsonProcessingException {
-        return this.dataMapper.writeValueAsString(buildPostData(event));
+    protected String convertLogEventsToJson(List<ILoggingEvent> events) throws JsonProcessingException {
+        List<Map<String, Object>> values = events.stream()
+                .map(this::buildPostData)
+                .collect(Collectors.toList());
+        return this.dataMapper.writeValueAsString(values);
     }
 
     protected LogtailResponse convertResponseToObject(Response response) throws JsonProcessingException {
@@ -144,7 +155,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     /**
      * Call Logtail API posting given JSON formated string.
-     * 
+     *
      * @param jsonData
      *            a json oriented map
      * @return the http response
@@ -158,12 +169,12 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     /**
      * Converts a logback logging event to a JSON oriented array.
-     * 
+     *
      * @param event
      *            the logging event
      * @return a json oriented array
      */
-    protected ArrayList<Object> buildPostData(ILoggingEvent event) {
+    protected Map<String, Object> buildPostData(ILoggingEvent event) {
         Map<String, Object> line = new HashMap<>();
 
         line.put("dt", Long.toString(event.getTimeStamp()));
@@ -201,10 +212,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         }
         line.put("runtime", runtime);
 
-        ArrayList<Object> lines = new ArrayList<>();
-        lines.add(line);
-
-        return lines;
+        return line;
     }
 
     private Object getMetaValue(String type, String value) {
@@ -231,7 +239,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     /**
      * Sets your Logtail ingest API key.
-     * 
+     *
      * @param ingestKey
      *            your ingest key
      */
@@ -241,7 +249,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     /**
      * Sets the application name for Logtail indexation.
-     * 
+     *
      * @param appName
      *            application name
      */
@@ -251,7 +259,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     /**
      * Sets the Logtail ingest API url.
-     * 
+     *
      * @param ingestUrl
      *            Logtail url
      */
@@ -261,7 +269,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     /**
      * Sets the MDC fields that needs to be sent inside Logtail metadata, separated by a comma.
-     * 
+     *
      * @param mdcFields
      *            MDC fields to use
      */
@@ -272,7 +280,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     /**
      * Sets the MDC fields types that will be sent inside Logtail metadata, in the same order as <i>mdcFields</i> are set
      * up, separated by a comma. Possible values are <i>string</i>, <i>boolean</i>, <i>int</i> and <i>long</i>.
-     * 
+     *
      * @param mdcTypes
      *            MDC fields types
      */
@@ -282,7 +290,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     /**
      * Sets the connection timeout of the underlying HTTP client, in milliseconds.
-     * 
+     *
      * @param connectTimeout
      *            client connection timeout
      */
@@ -292,7 +300,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     /**
      * Sets the read timeout of the underlying HTTP client, in milliseconds.
-     * 
+     *
      * @param readTimeout
      *            client read timeout
      */
@@ -300,7 +308,30 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         this.readTimeout = readTimeout;
     }
 
+    /**
+     * Sets the batch size for the number of messages to be sent via the API
+     *
+     * @param batchSize
+     *            size of the message batch
+     */
+    public void setBatchSize(int batchSize) {
+        this.batchSize = batchSize;
+    }
+
+    /**
+     * Get the size of the message batch
+     */
+    public int getBatchSize() {
+        return batchSize;
+    }
+
     public boolean isDisabled() {
         return this.disabled;
+    }
+
+    @Override
+    public void stop() {
+        flush();
+        super.stop();
     }
 }

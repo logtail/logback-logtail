@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
-    <appender name="LogtailHttp" class="com.logtail.logback.LogtailAppender">
+    <appender name="LogtailHttp" class="com.logtail.logback.LogtailAppenderDecorator">
         <appName>LogtailTest</appName>
         <ingestKey>${LOGTAIL_INGEST_KEY}</ingestKey>
         <batchSize>200</batchSize>
@@ -11,7 +11,6 @@
 
     <appender name="Logtail" class="ch.qos.logback.classic.AsyncAppender">
         <appender-ref ref="LogtailHttp" />
-        <queueSize>500</queueSize>
         <discardingThreshold>0</discardingThreshold>
         <includeCallerData>true</includeCallerData>
     </appender>

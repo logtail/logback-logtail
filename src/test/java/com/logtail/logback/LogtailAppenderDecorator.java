@@ -14,12 +14,15 @@ public class LogtailAppenderDecorator extends LogtailAppender {
 
     private LogtailResponse logtailResponse;
 
+    protected int apiCalls = 0;
+
     @Override
     protected Response callIngestApi(String jsonData) {
 
         try {
 
             this.response = super.callIngestApi(jsonData);
+            apiCalls++;
             return response;
 
         } catch (Throwable t) {
