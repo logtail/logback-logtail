@@ -11,7 +11,7 @@
     <groupId>com.logtail</groupId>
     <artifactId>logback-logtail</artifactId>
     <packaging>jar</packaging>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.1-SNAPSHOT</version>
 
     <name>${project.groupId}:${project.artifactId}</name>
     <description>Logback Java appender for sending logs to Logtail.com</description>
