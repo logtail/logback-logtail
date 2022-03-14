@@ -328,4 +328,10 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     public boolean isDisabled() {
         return this.disabled;
     }
+
+    @Override
+    public void stop() {
+        flush();
+        super.stop();
+    }
 }
