@@ -62,7 +62,7 @@ public class LogtailAppenderBatchConfigSizeTest {
         MDC.put("requestId", "testErrorLog");
         MDC.put("requestTime", 199 + "");
         this.logger.info(batchRunId + " Custom batch size Final Batch Groot ");
-        Thread.sleep(2000);
+        Thread.sleep(4000);
         assertEquals(1, this.appender.apiCalls);
 
         isOk();
