@@ -49,7 +49,7 @@ Example dependencies:
 <dependency>
     <groupId>jakarta.ws.rs</groupId>
     <artifactId>jakarta.ws.rs-api</artifactId>
-    <version>3.1.0</version>
+    <version>3.0.0</version>
 </dependency>
 
 <dependency>
