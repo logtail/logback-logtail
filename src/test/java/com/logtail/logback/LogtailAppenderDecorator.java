@@ -1,10 +1,9 @@
 
 package com.logtail.logback;
 
-import javax.ws.rs.core.Response;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonMappingException;
+import jakarta.ws.rs.core.Response;
 
 public class LogtailAppenderDecorator extends LogtailAppender {
 

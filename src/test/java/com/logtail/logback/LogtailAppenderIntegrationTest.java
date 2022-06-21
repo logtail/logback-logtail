@@ -4,13 +4,13 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
+import jakarta.ws.rs.ProcessingException;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
-import javax.ws.rs.ProcessingException;
 import java.util.UUID;
 
 import static org.junit.Assert.*;

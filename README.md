@@ -31,37 +31,49 @@ Example dependencies:
 <dependency>
     <groupId>ch.qos.logback</groupId>
     <artifactId>logback-classic</artifactId>
-    <version>1.2.6</version>
+    <version>1.2.11</version>
 </dependency>
 
 <dependency>
     <groupId>ch.qos.logback</groupId>
     <artifactId>logback-core</artifactId>
-    <version>1.2.6</version>
+    <version>1.2.11</version>
 </dependency>
 
 <dependency>
     <groupId>com.fasterxml.jackson.jaxrs</groupId>
     <artifactId>jackson-jaxrs-json-provider</artifactId>
-    <version>2.12.4</version>
+    <version>2.13.3</version>
 </dependency>
 
 <dependency>
-    <groupId>javax.ws.rs</groupId>
-    <artifactId>javax.ws.rs-api</artifactId>
-    <version>2.1.1</version>
+    <groupId>jakarta.ws.rs</groupId>
+    <artifactId>jakarta.ws.rs-api</artifactId>
+    <version>3.0.0</version>
+</dependency>
+
+<dependency>
+    <groupId>jakarta.inject</groupId>
+    <artifactId>jakarta.inject-api</artifactId>
+    <version>2.1.0</version>
+</dependency>
+
+<dependency>
+    <groupId>jakarta.activation</groupId>
+    <artifactId>jakarta.activation-api</artifactId>
+    <version>2.1.0</version>
 </dependency>
 
 <dependency>
     <groupId>org.glassfish.jersey.core</groupId>
     <artifactId>jersey-client</artifactId>
-    <version>2.33</version>
+    <version>3.0.4</version>
 </dependency>
 
 <dependency>
     <groupId>org.glassfish.jersey.inject</groupId>
     <artifactId>jersey-hk2</artifactId>
-    <version>2.33</version>
+    <version>3.0.4</version>
 </dependency>
 ```
 
