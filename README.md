@@ -86,7 +86,6 @@ Then, copy the following two Logtail appenders to your `classpath:/logback.xml` 
     <appender name="LogtailHttp" class="com.logtail.logback.LogtailAppender">
         <appName>MyApp</appName>
         <ingestKey>${LOGTAIL_INGEST_KEY}</ingestKey>
-        <batchSize>10</bathSize>
         <mdcFields>requestId,requestTime</mdcFields>
         <mdcTypes>string,int</mdcTypes>
     </appender>
