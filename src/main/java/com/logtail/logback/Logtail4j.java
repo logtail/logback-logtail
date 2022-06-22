@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -41,7 +42,7 @@ public class Logtail4j extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected PatternLayoutEncoder patternLayoutEncoder;
 
     // Non-customizable variables
-    protected Vector<ILoggingEvent> eventQueue;
+    protected Vector<ILoggingEvent> eventQueue = new Vector<>();
 
     // Utils
     protected ScheduledExecutorService scheduledExecutorService;
@@ -52,7 +53,7 @@ public class Logtail4j extends UnsynchronizedAppenderBase<ILoggingEvent> {
     // Re-located
     protected ThreadFactory threadFactory = r -> {
         Thread thread = Executors.defaultThreadFactory().newThread(r);
-        thread.setName("logtail4j-appender");
+        thread.setName("logtail4j");
         thread.setDaemon(true);
         return thread;
     };
@@ -72,9 +73,6 @@ public class Logtail4j extends UnsynchronizedAppenderBase<ILoggingEvent> {
     @Override
     protected void append(ILoggingEvent iLoggingEvent) {
 
-        if (disabled)
-            return;
-
         if (iLoggingEvent.getLoggerName().equals(Logtail4j.class.getName()))
             return;
 
@@ -89,19 +87,10 @@ public class Logtail4j extends UnsynchronizedAppenderBase<ILoggingEvent> {
             return;
 
         try {
-            HttpURLConnection connection = getHttpURLConnection(this.ingestUrl);
+            Logtail4jResponse response = callHttpURLConnection();
 
-            try (OutputStream os = connection.getOutputStream()) {
-                byte[] input = eventQueueToJson().getBytes(StandardCharsets.UTF_8);
-                os.write(input, 0, input.length);
-                os.flush();
-            }
-
-            int responseCode = connection.getResponseCode();
-            String responseMessage = connection.getResponseMessage();
-
-            if (responseCode != 202) {
-                errorLogger.error("Error calling Logtail : {} ({})", responseMessage, responseCode);
+            if (response.getResponseCode() != 202) {
+                errorLogger.error("Error calling Logtail : {} ({})", response.getResponseMessage(), response.getResponseCode());
             }
 
             eventQueue.clear();
@@ -189,8 +178,8 @@ public class Logtail4j extends UnsynchronizedAppenderBase<ILoggingEvent> {
         return value;
     }
 
-    protected HttpURLConnection getHttpURLConnection(String ingestUrl) throws IOException {
-        HttpURLConnection httpURLConnection = (HttpURLConnection) new URL(ingestUrl).openConnection();
+    protected HttpURLConnection getHttpURLConnection() throws IOException {
+        HttpURLConnection httpURLConnection = (HttpURLConnection) new URL(this.ingestUrl).openConnection();
         httpURLConnection.setDoOutput(true);
         httpURLConnection.setDoInput(true);
         httpURLConnection.setRequestProperty("User-Agent", this.userAgent);
@@ -202,6 +191,26 @@ public class Logtail4j extends UnsynchronizedAppenderBase<ILoggingEvent> {
         httpURLConnection.setConnectTimeout(this.connectionTimeout);
         httpURLConnection.setReadTimeout(this.readTimeout);
         return httpURLConnection;
+    }
+
+    protected Logtail4jResponse callHttpURLConnection() throws IOException {
+        HttpURLConnection connection = getHttpURLConnection();
+
+        try {
+            connection.connect();
+        } catch (Exception e) {
+            errorLogger.error("Error trying to call Logtail : {}", e.getMessage());
+        }
+
+        try (OutputStream os = connection.getOutputStream()) {
+            byte[] input = eventQueueToJson().getBytes(StandardCharsets.UTF_8);
+            os.write(input, 0, input.length);
+            os.flush();
+        }
+
+        connection.disconnect();
+
+        return new Logtail4jResponse(connection.getResponseCode(), connection.getResponseMessage());
     }
 
     public class LogtailSender implements Runnable {
