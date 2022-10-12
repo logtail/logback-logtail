@@ -2,7 +2,7 @@
     <appender name="LogtailHttp" class="com.logtail.logback.LogtailAppender">
         <appName>Example app</appName>
         <batchSize>1</batchSize>
-        <ingestKey><!-- YOUR LOGTAIL API KEY --></ingestKey>
+        <ingestKey><!-- YOUR LOGTAIL TOKEN --></ingestKey>
         <mdcFields>requestId,requestTime</mdcFields>
         <mdcTypes>string,int</mdcTypes>
     </appender>
