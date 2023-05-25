@@ -248,7 +248,8 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Sets your Better Stack source token.
+     * Deprecated! Kept for backward compatibility.
+     * Sets your Better Stack source token if unset.
      *
      * @param ingestKey
      *            your Better Stack source token
