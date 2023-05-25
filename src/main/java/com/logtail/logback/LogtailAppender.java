@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
 /**
  * Logback appender for sending logs to <a href="https://logs.betterstack.com">betterstack.com</a>.
  *
- * @author tomas@betterstack.com
+ * @author tomas@logtail.com
  */
 public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
