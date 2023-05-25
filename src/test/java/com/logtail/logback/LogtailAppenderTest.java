@@ -32,7 +32,7 @@ public class LogtailAppenderTest {
 
         // Self instantiated appender
         LogtailAppender appender = new LogtailAppender();
-        appender.setAppName("LogtailTest");
+        appender.setAppName("BetterStackTest");
         appender.setMdcFields("field1,field3,field4,field5");
         appender.setMdcTypes("string,int,boolean,long");
 
@@ -51,7 +51,7 @@ public class LogtailAppenderTest {
         assertNotNull(event.get("level"));
         assertEquals(Level.INFO.toString(), event.get("level"));
         assertNotNull(event.get("app"));
-        assertEquals("LogtailTest", event.get("app"));
+        assertEquals("BetterStackTest", event.get("app"));
 
         assertNotNull(event.get("meta"));
         Map<String, Object> meta = (Map<String, Object>) event.get("meta");

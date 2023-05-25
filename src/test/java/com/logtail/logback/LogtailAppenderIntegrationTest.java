@@ -38,7 +38,7 @@ public class LogtailAppenderIntegrationTest {
 
         this.appender = new LogtailAppenderDecorator();
         this.appender.setContext((LoggerContext) LoggerFactory.getILoggerFactory());
-        this.appender.setIngestKey(System.getenv("LOGTAIL_INGEST_KEY"));
+        this.appender.setSourceToken(System.getenv("BETTER_STACK_SOURCE_TOKEN"));
         this.appender.start();
 
         this.logger.addAppender(appender);

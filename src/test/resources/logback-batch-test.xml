@@ -2,8 +2,8 @@
 <configuration>
 
     <appender name="LogtailHttp" class="com.logtail.logback.LogtailAppenderDecorator">
-        <appName>LogtailTest</appName>
-        <ingestKey>${LOGTAIL_INGEST_KEY}</ingestKey>
+        <appName>BetterStackTest</appName>
+        <sourceToken>${BETTER_STACK_SOURCE_TOKEN}</sourceToken>
         <batchSize>200</batchSize>
         <mdcFields>requestId,requestTime</mdcFields>
         <mdcTypes>string,int</mdcTypes>

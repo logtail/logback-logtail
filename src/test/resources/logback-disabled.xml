@@ -5,8 +5,8 @@
         <encoder>
             <pattern>[%thread] %msg%n</pattern>
         </encoder>
-        <appName>LogtailTest</appName>
-        <ingestKey></ingestKey>
+        <appName>BetterStackTest</appName>
+        <sourceToken></sourceToken>
         <mdcFields>requestId,requestTime</mdcFields>
         <mdcTypes>string,int</mdcTypes>
     </appender>

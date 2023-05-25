@@ -1,7 +1,7 @@
 <configuration debug="true">
     <appender name="LogtailHttp" class="com.logtail.logback.LogtailAppender">
-        <appName>Example app</appName>
-        <ingestKey><!-- YOUR LOGTAIL TOKEN --></ingestKey>
+        <appName>Better Stack Maven example app</appName>
+        <sourceToken><!-- YOUR SOURCE TOKEN --></sourceToken>
         <mdcFields>requestId,requestTime</mdcFields>
         <mdcTypes>string,int</mdcTypes>
     </appender>

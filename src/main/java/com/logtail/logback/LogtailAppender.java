@@ -24,13 +24,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * Logback appender for sending logs to <a href="https://logtail.com">logtail.com</a>.
+ * Logback appender for sending logs to <a href="https://logs.betterstack.com">betterstack.com</a>.
  *
- * @author tomas@logtail.com
+ * @author tomas@betterstack.com
  */
 public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
-    private static final String CUSTOM_USER_AGENT = "Logtail Logback Appender";
+    private static final String CUSTOM_USER_AGENT = "Better Stack Logback Appender";
 
     private final Logger errorLog = LoggerFactory.getLogger(LogtailAppender.class);
 
@@ -48,7 +48,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     protected String appName;
 
-    protected String ingestUrl = "https://in.logtail.com";
+    protected String ingestUrl = "https://in.logs.betterstack.com";
 
     protected List<String> mdcFields = new ArrayList<>();
 
@@ -105,7 +105,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
         // Length 8+ means "Bearer " plus token, as a simple test
         if (!this.headers.containsKey("Authorization") || this.headers.getFirst("Authorization").toString().trim().length() < 8) {
-            errorLog.warn("Empty ingest API key for Logtail ; disabling LogtailAppender");
+            errorLog.warn("Missing Source token for Better Stack - disabling LogtailAppender. Find out how to fix this at: https://betterstack.com/docs/logs/java ");
             this.disabled = true;
             return;
         }
@@ -130,7 +130,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
             if (response.getStatus() != 202) {
                 LogtailResponse logtailResponse = convertResponseToObject(response);
-                errorLog.error("Error calling Logtail : {} ({})", logtailResponse.getError(), response.getStatus());
+                errorLog.error("Error calling Better Stack : {} ({})", logtailResponse.getError(), response.getStatus());
             }
 
             batch.clear();
@@ -138,7 +138,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             errorLog.error("Error processing JSON data : {}", e.getMessage());
 
         } catch (Exception e) {
-            errorLog.error("Error trying to call Logtail : {}", e.getMessage());
+            errorLog.error("Error trying to call Better Stack : {}", e.getMessage());
         }
     }
 
@@ -154,7 +154,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Call Logtail API posting given JSON formated string.
+     * Call Better Stack API posting given JSON formated string.
      *
      * @param jsonData
      *            a json oriented map
@@ -238,12 +238,25 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Sets your Logtail ingest API key.
+     * Sets your Better Stack source token.
+     *
+     * @param sourceToken
+     *            your Better Stack source token
+     */
+    public void setSourceToken(String sourceToken) {
+        this.headers.add("Authorization", String.format("Bearer %s", sourceToken));
+    }
+
+    /**
+     * Sets your Better Stack source token.
      *
      * @param ingestKey
-     *            your ingest key
+     *            your Better Stack source token
      */
     public void setIngestKey(String ingestKey) {
+        if (this.headers.containsKey("Authorization")) {
+            return;
+        }
         this.headers.add("Authorization", String.format("Bearer %s", ingestKey));
     }
 
@@ -258,27 +271,27 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Sets the Logtail ingest API url.
+     * Sets the Better Stack ingest API url.
      *
      * @param ingestUrl
-     *            Logtail url
+     *            Better Stack ingest url
      */
     public void setIngestUrl(String ingestUrl) {
         this.ingestUrl = ingestUrl;
     }
 
     /**
-     * Sets the MDC fields that needs to be sent inside Logtail metadata, separated by a comma.
+     * Sets the MDC fields that will be sent as metadata, separated by a comma.
      *
      * @param mdcFields
-     *            MDC fields to use
+     *            MDC fields to include in structured logs
      */
     public void setMdcFields(String mdcFields) {
         this.mdcFields = Arrays.asList(mdcFields.split(","));
     }
 
     /**
-     * Sets the MDC fields types that will be sent inside Logtail metadata, in the same order as <i>mdcFields</i> are set
+     * Sets the MDC fields types that will be sent as metadata, in the same order as <i>mdcFields</i> are set
      * up, separated by a comma. Possible values are <i>string</i>, <i>boolean</i>, <i>int</i> and <i>long</i>.
      *
      * @param mdcTypes
