@@ -1,6 +1,6 @@
 # [Better Stack](https://betterstack.com/logs) Logback appender
 
-📣 Logtail is now part of Better Stack · [Learn more ⇗](https://betterstack.com/press/introducing-better-stack/)
+📣 Logtail is now part of Better Stack. [Learn more ⇗](https://betterstack.com/press/introducing-better-stack/)
   
 [![Better Stack dashboard](https://github.com/logtail/logback-logtail/assets/10132717/0b7a6c84-1499-4d43-b3e6-f3b40285d627)](https://betterstack.com/logs)
 
