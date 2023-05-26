@@ -2,7 +2,7 @@
 
 📣 Logtail is now part of Better Stack · [Learn more ⇗](https://betterstack.com/press/introducing-better-stack/)
   
-[![Better Stack](https://user-images.githubusercontent.com/19272921/154085622-59997d5a-3f91-4bc9-a815-3b8ead16d28d.jpeg)](https://betterstack.com/logs)
+[![Better Stack dashboard](https://github.com/logtail/logback-logtail/assets/10132717/0b7a6c84-1499-4d43-b3e6-f3b40285d627)](https://betterstack.com/logs)
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue)](LICENSE.md)
 ![Java Build](https://github.com/logtail/logback-logtail/workflows/Java%20Build/badge.svg)
