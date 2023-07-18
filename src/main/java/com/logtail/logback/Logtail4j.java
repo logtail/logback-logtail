@@ -27,110 +27,119 @@ import java.util.stream.Collectors;
 public class Logtail4j extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     // Customizable variables
-    protected String appName = "App";
-    protected String ingestUrl = "https://in.logtail.com";
-    protected String ingestKey = "";
-    protected String userAgent = "Logtail4j";
+    protected String appName;
+    protected String ingestUrl = "https://in.logs.betterstack.com";
+    protected String sourceToken;
+    protected String userAgent = "Better Stack Logback Appender";
 
     protected List<String> mdcFields = new ArrayList<>();
     protected List<String> mdcTypes = new ArrayList<>();
 
-    protected int flushInterval = 3000;
-    protected int connectionTimeout = 5000;
+    protected int batchSize = 1000;
+    protected int batchInterval = 3000;
+    protected int connectTimeout = 5000;
     protected int readTimeout = 10000;
 
-    protected PatternLayoutEncoder patternLayoutEncoder;
+    protected PatternLayoutEncoder encoder;
 
     // Non-customizable variables
-    protected Vector<ILoggingEvent> eventQueue = new Vector<>();
+    protected Vector<ILoggingEvent> batch = new Vector<>();
 
     // Utils
     protected ScheduledExecutorService scheduledExecutorService;
-    protected ObjectMapper objectMapper;
-    protected Logger errorLogger;
+    protected ObjectMapper dataMapper;
+    protected Logger errorLog;
     protected boolean disabled;
 
-    // Re-located
     protected ThreadFactory threadFactory = r -> {
         Thread thread = Executors.defaultThreadFactory().newThread(r);
-        thread.setName("logtail4j");
+        thread.setName("logtail-appender");
         thread.setDaemon(true);
         return thread;
     };
 
     public Logtail4j() {
+        this.errorLog = LoggerFactory.getLogger(Logtail4j.class);
 
-        this.errorLogger = LoggerFactory.getLogger(Logtail4j.class);
-
-        this.objectMapper = new ObjectMapper()
+        this.dataMapper = new ObjectMapper()
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL)
                 .setPropertyNamingStrategy(PropertyNamingStrategies.UPPER_CAMEL_CASE);
 
         this.scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(threadFactory);
-        this.scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), flushInterval, flushInterval, TimeUnit.MILLISECONDS);
+        this.scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
     }
 
     @Override
-    protected void append(ILoggingEvent iLoggingEvent) {
-
-        if (iLoggingEvent.getLoggerName().equals(Logtail4j.class.getName()))
+    protected void append(ILoggingEvent event) {
+        if (disabled)
             return;
 
-        if (ingestUrl.isEmpty() || ingestKey.isEmpty())
+        if (event.getLoggerName().equals(Logtail4j.class.getName()))
             return;
 
-        eventQueue.add(iLoggingEvent);
-    }
-
-    protected void processEventQueue() {
-        if (eventQueue.isEmpty())
+        if (ingestUrl.isEmpty() || sourceToken.isEmpty()) {
+            errorLog.warn("Missing Source token for Better Stack - disabling LogtailAppender. Find out how to fix this at: https://betterstack.com/docs/logs/java ");
+            this.disabled = true;
             return;
+        }
 
-        try {
-            Logtail4jResponse response = callHttpURLConnection();
+        batch.add(event);
 
-            if (response.getResponseCode() != 202) {
-                errorLogger.error("Error calling Logtail : {} ({})", response.getResponseMessage(), response.getResponseCode());
-            }
-
-            eventQueue.clear();
-
-        } catch (JsonProcessingException e) {
-            errorLogger.error("Error processing JSON data : {}", e.getMessage());
-
-        } catch (Exception e) {
-            errorLogger.error("Error trying to call Logtail : {}", e.getMessage());
+        if (batch.size() >= batchSize) {
+            // TODO: make thread secure
+            flush();
         }
     }
 
-    protected String eventQueueToJson() throws JsonProcessingException {
-        return this.objectMapper.writeValueAsString(eventQueue.stream()
+    protected void flush() {
+        if (batch.isEmpty())
+            return;
+
+        try {
+            LogtailResponse response = callHttpURLConnection();
+
+            if (response.getStatus() != 202) {
+                errorLog.error("Error calling Better Stack : {} ({})", response.getError(), response.getStatus());
+            }
+
+            batch.clear();
+
+        } catch (JsonProcessingException e) {
+            errorLog.error("Error processing JSON data : {}", e.getMessage());
+
+        } catch (Exception e) {
+            errorLog.error("Error trying to call Better Stack : {}", e.getMessage());
+        }
+    }
+
+    protected String batchToJson() throws JsonProcessingException {
+        return this.dataMapper.writeValueAsString(batch.stream()
                 .map(this::buildPostData)
                 .collect(Collectors.toList()));
     }
 
-    protected Map<String, Object> buildPostData(ILoggingEvent iLoggingEvent) {
+    protected Map<String, Object> buildPostData(ILoggingEvent event) {
         Map<String, Object> logLine = new HashMap<>();
-        logLine.put("dt", Long.toString(iLoggingEvent.getTimeStamp()));
-        logLine.put("level", iLoggingEvent.getLevel().toString());
+        logLine.put("dt", Long.toString(event.getTimeStamp()));
+        logLine.put("level", event.getLevel().toString());
         logLine.put("app", this.appName);
-        logLine.put("message", generateLogMessage(iLoggingEvent));
-        logLine.put("meta", generateLogMeta(iLoggingEvent));
-        logLine.put("runtime", generateLogRuntime(iLoggingEvent));
+        logLine.put("message", generateLogMessage(event));
+        logLine.put("meta", generateLogMeta(event));
+        logLine.put("runtime", generateLogRuntime(event));
+
         return logLine;
     }
 
-    protected String generateLogMessage(ILoggingEvent iLoggingEvent) {
-        return this.patternLayoutEncoder != null ? new String(this.patternLayoutEncoder.encode(iLoggingEvent))
-                : iLoggingEvent.getFormattedMessage();
+    protected String generateLogMessage(ILoggingEvent event) {
+        return this.encoder != null ? new String(this.encoder.encode(event)) : event.getFormattedMessage();
     }
 
-    protected Map<String, Object> generateLogMeta(ILoggingEvent iLoggingEvent) {
+    protected Map<String, Object> generateLogMeta(ILoggingEvent event) {
         Map<String, Object> logMeta = new HashMap<>();
-        logMeta.put("logger", iLoggingEvent.getLoggerName());
+        logMeta.put("logger", event.getLoggerName());
 
-        if (!mdcFields.isEmpty() && !iLoggingEvent.getMDCPropertyMap().isEmpty()) {
-            for (Entry<String, String> entry : iLoggingEvent.getMDCPropertyMap().entrySet()) {
+        if (!mdcFields.isEmpty() && !event.getMDCPropertyMap().isEmpty()) {
+            for (Entry<String, String> entry : event.getMDCPropertyMap().entrySet()) {
                 if (mdcFields.contains(entry.getKey())) {
                     String type = mdcTypes.get(mdcFields.indexOf(entry.getKey()));
                     logMeta.put(entry.getKey(), getMetaValue(type, entry.getValue()));
@@ -141,12 +150,12 @@ public class Logtail4j extends UnsynchronizedAppenderBase<ILoggingEvent> {
         return logMeta;
     }
 
-    protected Map<String, Object> generateLogRuntime(ILoggingEvent iLoggingEvent) {
+    protected Map<String, Object> generateLogRuntime(ILoggingEvent event) {
         Map<String, Object> logRuntime = new HashMap<>();
-        logRuntime.put("thread", iLoggingEvent.getThreadName());
+        logRuntime.put("thread", event.getThreadName());
 
-        if (iLoggingEvent.hasCallerData()) {
-            StackTraceElement[] callerData = iLoggingEvent.getCallerData();
+        if (event.hasCallerData()) {
+            StackTraceElement[] callerData = event.getCallerData();
 
             if (callerData.length > 0) {
                 StackTraceElement callerContext = callerData[0];
@@ -172,7 +181,7 @@ public class Logtail4j extends UnsynchronizedAppenderBase<ILoggingEvent> {
                     return Boolean.valueOf(value);
             }
         } catch (NumberFormatException e) {
-            errorLogger.error("Error getting meta value - {}", e.getMessage());
+            errorLog.error("Error getting meta value - {}", e.getMessage());
         }
 
         return value;
@@ -186,87 +195,171 @@ public class Logtail4j extends UnsynchronizedAppenderBase<ILoggingEvent> {
         httpURLConnection.setRequestProperty("Accept", "application/json");
         httpURLConnection.setRequestProperty("Content-Type", "application/json");
         httpURLConnection.setRequestProperty("Charset", "UTF-8");
-        httpURLConnection.setRequestProperty("Authorization", String.format("Bearer %s", this.ingestKey));
+        httpURLConnection.setRequestProperty("Authorization", String.format("Bearer %s", this.sourceToken));
         httpURLConnection.setRequestMethod("POST");
-        httpURLConnection.setConnectTimeout(this.connectionTimeout);
+        httpURLConnection.setConnectTimeout(this.connectTimeout);
         httpURLConnection.setReadTimeout(this.readTimeout);
         return httpURLConnection;
     }
 
-    protected Logtail4jResponse callHttpURLConnection() throws IOException {
+    protected LogtailResponse callHttpURLConnection() throws IOException {
         HttpURLConnection connection = getHttpURLConnection();
 
         try {
             connection.connect();
         } catch (Exception e) {
-            errorLogger.error("Error trying to call Logtail : {}", e.getMessage());
+            errorLog.error("Error trying to call Better Stack : {}", e.getMessage());
         }
 
         try (OutputStream os = connection.getOutputStream()) {
-            byte[] input = eventQueueToJson().getBytes(StandardCharsets.UTF_8);
+            byte[] input = batchToJson().getBytes(StandardCharsets.UTF_8);
             os.write(input, 0, input.length);
             os.flush();
         }
 
         connection.disconnect();
 
-        return new Logtail4jResponse(connection.getResponseCode(), connection.getResponseMessage());
+        return new LogtailResponse(connection.getResponseMessage(), connection.getResponseCode());
     }
 
     public class LogtailSender implements Runnable {
         @Override
         public void run() {
             try {
-                processEventQueue();
+                flush();
             } catch (Exception e) {
-                errorLogger.error(e.getMessage());
+                errorLog.error(e.getMessage());
             }
         }
     }
 
+    /**
+     * Sets the application name for Better Stack indexation.
+     *
+     * @param appName
+     *            application name
+     */
     public void setAppName(String appName) {
         this.appName = appName;
     }
 
+    /**
+     * Sets the Better Stack ingest API url.
+     *
+     * @param ingestUrl
+     *            Better Stack ingest url
+     */
     public void setIngestUrl(String ingestUrl) {
         this.ingestUrl = ingestUrl;
     }
 
+    /**
+     * Sets your Better Stack source token.
+     *
+     * @param sourceToken
+     *            your Better Stack source token
+     */
+    public void setSourceToken(String sourceToken) {
+        this.sourceToken = sourceToken;
+    }
+
+    /**
+     * Deprecated! Kept for backward compatibility.
+     * Sets your Better Stack source token if unset.
+     *
+     * @param ingestKey
+     *            your Better Stack source token
+     */
     public void setIngestKey(String ingestKey) {
-        this.ingestKey = ingestKey;
+        if (this.sourceToken == null) {
+            return;
+        }
+        this.sourceToken = ingestKey;
     }
 
     public void setUserAgent(String userAgent) {
         this.userAgent = userAgent;
     }
 
+    /**
+     * Sets the MDC fields that will be sent as metadata, separated by a comma.
+     *
+     * @param mdcFields
+     *            MDC fields to include in structured logs
+     */
     public void setMdcFields(String mdcFields) {
         this.mdcFields = Arrays.asList(mdcFields.split(","));
     }
 
+    /**
+     * Sets the MDC fields types that will be sent as metadata, in the same order as <i>mdcFields</i> are set
+     * up, separated by a comma. Possible values are <i>string</i>, <i>boolean</i>, <i>int</i> and <i>long</i>.
+     *
+     * @param mdcTypes
+     *            MDC fields types
+     */
     public void setMdcTypes(String mdcTypes) {
         this.mdcTypes = Arrays.asList(mdcTypes.split(","));
     }
 
-    public void setFlushInterval(int flushInterval) {
-        this.flushInterval = flushInterval;
+    /**
+     * Sets the batch size for the number of messages to be sent via the API
+     *
+     * @param batchSize
+     *            size of the message batch
+     */
+    public void setBatchSize(int batchSize) {
+        this.batchSize = batchSize;
     }
 
-    public void setConnectionTimeout(int connectionTimeout) {
-        this.connectionTimeout = connectionTimeout;
+    /**
+     * Get the batch size for the number of messages to be sent via the API
+     */
+    public int getBatchSize() {
+        return batchSize;
     }
 
+    /**
+     * Sets the maximum wait time for a batch to be sent via the API, in milliseconds.
+     *
+     * @param batchInterval
+     *            maximum wait time for message batch [ms]
+     */
+    public void setBatchInterval(int batchInterval) {
+        this.batchInterval = batchInterval;
+    }
+
+    /**
+     * Sets the connection timeout of the underlying HTTP client, in milliseconds.
+     *
+     * @param connectTimeout
+     *            client connection timeout [ms]
+     */
+    public void setConnectTimeout(int connectTimeout) {
+        this.connectTimeout = connectTimeout;
+    }
+
+    /**
+     * Sets the read timeout of the underlying HTTP client, in milliseconds.
+     *
+     * @param readTimeout
+     *            client read timeout
+     */
     public void setReadTimeout(int readTimeout) {
         this.readTimeout = readTimeout;
     }
 
-    public void setPatternLayoutEncoder(PatternLayoutEncoder patternLayoutEncoder) {
-        this.patternLayoutEncoder = patternLayoutEncoder;
+    public void setEncoder(PatternLayoutEncoder encoder) {
+        this.encoder = encoder;
+    }
+
+    public boolean isDisabled() {
+        return this.disabled;
     }
 
     @Override
     public void stop() {
-        processEventQueue();
+        flush();
         super.stop();
     }
 }

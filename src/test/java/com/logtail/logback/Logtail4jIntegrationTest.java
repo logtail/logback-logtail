@@ -30,7 +30,7 @@ public class Logtail4jIntegrationTest {
 
         this.appender = new Logtail4jDecorator();
         this.appender.setContext((LoggerContext) LoggerFactory.getILoggerFactory());
-        this.appender.setIngestKey(System.getenv("BETTER_STACK_SOURCE_TOKEN"));
+        this.appender.setSourceToken(System.getenv("BETTER_STACK_SOURCE_TOKEN"));
         this.appender.start();
 
         this.logger.addAppender(appender);
@@ -47,7 +47,7 @@ public class Logtail4jIntegrationTest {
         MDC.put("requestId", "testInfoLog");
         MDC.put("requestTime", "123");
         this.logger.info("I am Groot");
-        this.appender.processEventQueue();
+        this.appender.flush();
 
         isOk();
     }
@@ -57,7 +57,7 @@ public class Logtail4jIntegrationTest {
         MDC.put("requestId", "testJsonLog");
         MDC.put("requestTime", "456");
         this.logger.info("I am { \"name\": \"Groot\", \"id\": \"GROOT\" }");
-        this.appender.processEventQueue();
+        this.appender.flush();
         isOk();
     }
 
@@ -66,7 +66,7 @@ public class Logtail4jIntegrationTest {
         MDC.put("requestId", "testWarnLog");
         MDC.put("requestTime", "666");
         this.logger.warn("I AM groot");
-        this.appender.processEventQueue();
+        this.appender.flush();
         isOk();
     }
 
@@ -75,15 +75,15 @@ public class Logtail4jIntegrationTest {
         MDC.put("requestId", "testErrorLog");
         MDC.put("requestTime", "789");
         this.logger.error("I am Groot?", new RuntimeException("GROOT!"));
-        this.appender.processEventQueue();
+        this.appender.flush();
         isOk();
     }
 
     @Test
     public void testConnectTimeout(){
-        this.appender.connectionTimeout = 1;
+        this.appender.connectTimeout = 1;
         this.logger.error("I am no Groot");
-        this.appender.processEventQueue();
+        this.appender.flush();
         assertTrue(appender.hasException());
         assertTrue(appender.getException() instanceof IOException);
         assertNotNull(appender.getException().getMessage());
@@ -94,7 +94,7 @@ public class Logtail4jIntegrationTest {
     public void testReadTimeout(){
         this.appender.readTimeout = 1;
         this.logger.error("I am no Groot");
-        this.appender.processEventQueue();
+        this.appender.flush();
         assertTrue(appender.hasException());
         assertTrue(appender.getException() instanceof IOException);
         assertNotNull(appender.getException().getMessage());
@@ -103,7 +103,7 @@ public class Logtail4jIntegrationTest {
 
     private void isOk() {
         if (!appender.isOK() && appender.hasError()) {
-            System.out.println(appender.getResponse().getResponseCode() + " - " + appender.getResponse().getResponseMessage());
+            System.out.println(appender.getResponse().getStatus() + " - " + appender.getResponse().getError());
         }
         if (!appender.isOK() && appender.hasException()) {
             appender.getException().printStackTrace();

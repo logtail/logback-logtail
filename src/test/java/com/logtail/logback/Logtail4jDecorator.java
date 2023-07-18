@@ -4,11 +4,11 @@ import java.io.IOException;
 
 public class Logtail4jDecorator extends Logtail4j {
     private Exception exception;
-    private Logtail4jResponse response;
+    private LogtailResponse response;
     protected int httpCalls;
 
     @Override
-    protected Logtail4jResponse callHttpURLConnection() throws IOException {
+    protected LogtailResponse callHttpURLConnection() throws IOException {
         try {
             this.response = super.callHttpURLConnection();
             httpCalls++;
@@ -25,18 +25,18 @@ public class Logtail4jDecorator extends Logtail4j {
     }
 
     public boolean hasError() {
-        return this.response != null && this.response.getResponseMessage() != null;
+        return this.response != null && this.response.getError() != null;
     }
 
     public boolean isOK() {
-        return this.response != null && this.response.getResponseCode() == 202;
+        return this.response != null && this.response.getStatus() == 202;
     }
 
-    public Throwable getException() {
+    public Exception getException() {
         return exception;
     }
 
-    public Logtail4jResponse getResponse() {
+    public LogtailResponse getResponse() {
         return response;
     }
 }
