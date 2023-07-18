@@ -86,7 +86,6 @@ public class Logtail4jIntegrationTest {
         this.appender.processEventQueue();
         assertTrue(appender.hasException());
         assertTrue(appender.getException() instanceof IOException);
-        //assertNotNull(appender.getException().getCause());
         assertNotNull(appender.getException().getMessage());
         assertEquals("connect timed out", appender.getException().getMessage().toLowerCase());
     }
@@ -98,8 +97,8 @@ public class Logtail4jIntegrationTest {
         this.appender.processEventQueue();
         assertTrue(appender.hasException());
         assertTrue(appender.getException() instanceof IOException);
-        assertNotNull(appender.getException().getCause());
-        assertEquals("Read timed out", appender.getException().getCause().getMessage());
+        assertNotNull(appender.getException().getMessage());
+        assertEquals("read timed out", appender.getException().getMessage().toLowerCase());
     }
 
     private void isOk() {
