@@ -16,7 +16,7 @@ import java.util.UUID;
 import static org.junit.Assert.*;
 
 /**
- * ! One LOGTAIL_INGEST_KEY must be set as an environment variable before launching the test !
+ * ! BETTER_STACK_SOURCE_TOKEN must be set as an environment variable before launching the test !
  *
  *
  * @author tomas@logtail.com
