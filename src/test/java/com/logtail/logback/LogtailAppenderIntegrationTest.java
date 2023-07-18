@@ -132,14 +132,6 @@ public class LogtailAppenderIntegrationTest {
         assertEquals("read timed out", appender.getException().getMessage().toLowerCase());
     }
 
-    private void hasError(String message, int statusCode) {
-        assertFalse(appender.hasException());
-        assertFalse(appender.isOK());
-        assertTrue(appender.hasError());
-        assertEquals(message, appender.getResponse().getError());
-        assertEquals(statusCode, appender.getResponse().getStatus());
-    }
-
     private void isOk() {
         if (!appender.isOK() && appender.hasError()) {
             System.out.println(appender.getResponse().getStatus() + " - " + appender.getResponse().getError());
