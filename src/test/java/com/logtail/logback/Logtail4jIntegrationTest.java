@@ -30,7 +30,7 @@ public class Logtail4jIntegrationTest {
 
         this.appender = new Logtail4jDecorator();
         this.appender.setContext((LoggerContext) LoggerFactory.getILoggerFactory());
-        this.appender.setIngestKey("rzAtu7YRvk2XW6qmPZwn4HSY");
+        this.appender.setIngestKey(System.getenv("BETTER_STACK_SOURCE_TOKEN"));
         this.appender.start();
 
         this.logger.addAppender(appender);
