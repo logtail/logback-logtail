@@ -27,7 +27,7 @@ public class Logtail4jTest {
         ILoggingEvent ev = new LoggingEvent(Logger.FQCN, logger, Level.INFO, "My log message", null, new Object[]{});
 
         // Self instantiated appender
-        Logtail4j appender = new Logtail4j();
+        LogtailAppender appender = new LogtailAppender();
         appender.setAppName("LogtailTest");
         appender.setMdcFields("field1,field3,field4,field5");
         appender.setMdcTypes("string,int,boolean,long");

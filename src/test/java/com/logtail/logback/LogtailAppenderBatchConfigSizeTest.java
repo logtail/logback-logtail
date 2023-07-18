@@ -70,7 +70,7 @@ public class LogtailAppenderBatchConfigSizeTest {
 
     private void isOk() {
         if (!appender.isOK() && appender.hasError()) {
-            System.out.println(appender.getLogtailResponse().getStatus() + " - " + appender.getLogtailResponse().getError());
+            System.out.println(appender.getResponse().getStatus() + " - " + appender.getResponse().getError());
         }
         if (!appender.isOK() && appender.hasException()) {
             appender.getException().printStackTrace();

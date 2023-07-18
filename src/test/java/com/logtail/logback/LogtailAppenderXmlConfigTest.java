@@ -42,7 +42,7 @@ public class LogtailAppenderXmlConfigTest {
         assertNotNull(appender);
 
         assertNotNull(appender.ingestUrl);
-        assertTrue(appender.headers.containsKey("Authorization"));
+        assertNotNull(appender.sourceToken);
         assertEquals("BetterStackTest", appender.appName);
 
         assertEquals(2, appender.mdcFields.size());

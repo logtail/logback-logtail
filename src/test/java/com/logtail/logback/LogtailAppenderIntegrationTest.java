@@ -4,7 +4,6 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
-import jakarta.ws.rs.ProcessingException;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -12,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import java.util.UUID;
+import java.io.IOException;
 
 import static org.junit.Assert.*;
 
@@ -48,14 +48,6 @@ public class LogtailAppenderIntegrationTest {
     public void tearDown() {
         this.logger.detachAppender(appender);
     }
-
-    // Not anymore an error : appender is automatically disabled
-    //    @Test
-    //    public void testNoCredentials() {
-    //        this.appender.headers.remove("apikey");
-    //        this.logger.error("I am no Groot");
-    //        hasError("Missing Credentials", 401);
-    //    }
 
     @Test
     public void testInfoLog() {
@@ -120,38 +112,37 @@ public class LogtailAppenderIntegrationTest {
 
     @Test
     public void testConnectTimeout() {
-        this.appender.setConnectTimeout(2L);
+        this.appender.connectTimeout = 1;
         this.logger.error("I am no Groot");
         this.appender.flush();
         assertTrue(appender.hasException());
-        assertTrue(ProcessingException.class.isInstance(appender.getException()));
-        assertNotNull(appender.getException().getCause());
-        assertNotNull(appender.getException().getCause().getMessage());
-        assertEquals("connect timed out", appender.getException().getCause().getMessage().toLowerCase());
+        assertTrue(appender.getException() instanceof IOException);
+        assertNotNull(appender.getException().getMessage());
+        assertEquals("connect timed out", appender.getException().getMessage().toLowerCase());
     }
 
     @Test
     public void testReadTimeout() {
-        this.appender.setReadTimeout(2L);
+        this.appender.readTimeout = 1;
         this.logger.error("I am no Groot");
         this.appender.flush();
         assertTrue(appender.hasException());
-        assertTrue(ProcessingException.class.isInstance(appender.getException()));
-        assertNotNull(appender.getException().getCause());
-        assertEquals("Read timed out", appender.getException().getCause().getMessage());
+        assertTrue(appender.getException() instanceof IOException);
+        assertNotNull(appender.getException().getMessage());
+        assertEquals("read timed out", appender.getException().getMessage().toLowerCase());
     }
 
     private void hasError(String message, int statusCode) {
         assertFalse(appender.hasException());
         assertFalse(appender.isOK());
         assertTrue(appender.hasError());
-        assertEquals(message, appender.getLogtailResponse().getError());
+        assertEquals(message, appender.getResponse().getError());
         assertEquals(statusCode, appender.getResponse().getStatus());
     }
 
     private void isOk() {
         if (!appender.isOK() && appender.hasError()) {
-            System.out.println(appender.getLogtailResponse().getStatus() + " - " + appender.getLogtailResponse().getError());
+            System.out.println(appender.getResponse().getStatus() + " - " + appender.getResponse().getError());
         }
         if (!appender.isOK() && appender.hasException()) {
             appender.getException().printStackTrace();

@@ -17,7 +17,7 @@ import static org.junit.Assert.*;
 public class Logtail4jIntegrationTest {
     private final Logger logger = (Logger) LoggerFactory.getLogger(Logtail4jIntegrationTest.class);
 
-    private Logtail4jDecorator appender;
+    private LogtailAppenderDecorator appender;
 
     @Before
     public void init() throws JoranException {
@@ -26,9 +26,9 @@ public class Logtail4jIntegrationTest {
 
         JoranConfigurator configurator = new JoranConfigurator();
         configurator.setContext(loggerContext);
-        configurator.doConfigure("src/test/resources/logtail4j.xml");
+        configurator.doConfigure("src/test/resources/logback.xml");
 
-        this.appender = new Logtail4jDecorator();
+        this.appender = new LogtailAppenderDecorator();
         this.appender.setContext((LoggerContext) LoggerFactory.getILoggerFactory());
         this.appender.setSourceToken(System.getenv("BETTER_STACK_SOURCE_TOKEN"));
         this.appender.start();
