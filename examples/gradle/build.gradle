@@ -10,7 +10,7 @@ dependencies {
     implementation 'com.logtail:logback-logtail:0.2.0'
     implementation 'ch.qos.logback:logback-classic:1.2.11'
     implementation 'ch.qos.logback:logback-core:1.2.11'
-    implementation 'com.fasterxml.jackson.jaxrs:jackson-jaxrs-json-provider:2.13.3'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.5'
     implementation 'org.slf4j:slf4j-api:1.7.7'
 }
 
