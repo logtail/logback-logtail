@@ -1,5 +1,8 @@
 package com.logtail.logback;
 
+import ch.qos.logback.classic.spi.ILoggingEvent;
+
+import java.util.List;
 import java.io.IOException;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -11,10 +14,10 @@ public class LogtailAppenderDecorator extends LogtailAppender {
     private ReentrantLock flushLock = new ReentrantLock();
 
     @Override
-    protected LogtailResponse callHttpURLConnection() throws IOException {
+    protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
         try {
             apiCalls++;
-            this.response = super.callHttpURLConnection();
+            this.response = super.callHttpURLConnection(flushedSize);
 
             return this.response;
         } catch (Exception e) {

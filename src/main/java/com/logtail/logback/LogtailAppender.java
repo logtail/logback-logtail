@@ -111,7 +111,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         try {
             int flushedSize = batch.size();
 
-            LogtailResponse response = callHttpURLConnection();
+            LogtailResponse response = callHttpURLConnection(flushedSize);
 
             if (response.getStatus() != 202) {
                 errorLog.error("Error calling Better Stack : {} ({})", response.getError(), response.getStatus());
@@ -131,10 +131,13 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             flush();
     }
 
-    protected String batchToJson() throws JsonProcessingException {
-        return this.dataMapper.writeValueAsString(batch.stream()
+    protected String batchToJson(int flushedSize) throws JsonProcessingException {
+        return this.dataMapper.writeValueAsString(
+            batch.subList(0, flushedSize)
+                .stream()
                 .map(this::buildPostData)
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList())
+        );
     }
 
     protected Map<String, Object> buildPostData(ILoggingEvent event) {
@@ -221,7 +224,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         return httpURLConnection;
     }
 
-    protected LogtailResponse callHttpURLConnection() throws IOException {
+    protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
         HttpURLConnection connection = getHttpURLConnection();
 
         try {
@@ -231,7 +234,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         }
 
         try (OutputStream os = connection.getOutputStream()) {
-            byte[] input = batchToJson().getBytes(StandardCharsets.UTF_8);
+            byte[] input = batchToJson(flushedSize).getBytes(StandardCharsets.UTF_8);
             os.write(input, 0, input.length);
             os.flush();
         }
