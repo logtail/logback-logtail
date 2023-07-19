@@ -18,6 +18,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
@@ -44,6 +45,8 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     // Non-customizable variables
     protected Vector<ILoggingEvent> batch = new Vector<>();
+    protected AtomicBoolean isFlushing = new AtomicBoolean(false);
+    protected boolean mustReflush = false;
 
     // Utils
     protected ScheduledExecutorService scheduledExecutorService;
@@ -86,7 +89,6 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         batch.add(event);
 
         if (batch.size() >= batchSize) {
-            // TODO: make thread secure
             flush();
         }
     }
@@ -95,21 +97,32 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         if (batch.isEmpty())
             return;
 
+        if (isFlushing.getAndSet(true))
+            return;
+
+        this.mustReflush = false;
+
         try {
+            int flushedSize = batch.size();
+
             LogtailResponse response = callHttpURLConnection();
 
             if (response.getStatus() != 202) {
                 errorLog.error("Error calling Better Stack : {} ({})", response.getError(), response.getStatus());
             }
 
-            batch.clear();
-
+            batch.subList(0, flushedSize).clear();
         } catch (JsonProcessingException e) {
             errorLog.error("Error processing JSON data : {}", e.getMessage());
 
         } catch (Exception e) {
             errorLog.error("Error trying to call Better Stack : {}", e.getMessage());
         }
+
+        isFlushing.set(false);
+
+        if (this.mustReflush || batch.size() >= batchSize)
+            flush();
     }
 
     protected String batchToJson() throws JsonProcessingException {
@@ -359,6 +372,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     @Override
     public void stop() {
+        mustReflush = true;
         flush();
         super.stop();
     }
