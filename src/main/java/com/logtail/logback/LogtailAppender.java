@@ -168,7 +168,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     protected String batchToJson(int flushedSize) throws JsonProcessingException {
         return this.dataMapper.writeValueAsString(
-            batch.subList(0, flushedSize)
+            new ArrayList<>(batch.subList(0, flushedSize))
                 .stream()
                 .map(this::buildPostData)
                 .collect(Collectors.toList())
