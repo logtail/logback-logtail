@@ -106,11 +106,11 @@ public class LogtailAppenderIntegrationTest {
         MDC.put("requestTime", 999 + "");
         this.logger.info(batchRunId + " Final Batch Groot ");
 
-        Thread.sleep(50);
+        // Wait for async flush to be called
+        Thread.sleep(10);
         assertEquals(1, this.appender.apiCalls);
 
-        // Wait for ingester response
-        Thread.sleep(10000);
+        appender.awaitFlushCompletion();
 
         isOk();
     }
@@ -130,8 +130,7 @@ public class LogtailAppenderIntegrationTest {
         Thread.sleep(500);
         assertEquals(1, this.appender.apiCalls);
 
-        // Wait for ingester response
-        Thread.sleep(1000);
+        appender.awaitFlushCompletion();
 
         isOk();
     }
