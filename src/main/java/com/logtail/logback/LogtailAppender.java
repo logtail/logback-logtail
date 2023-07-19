@@ -119,10 +119,10 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
             batch.subList(0, flushedSize).clear();
         } catch (JsonProcessingException e) {
-            errorLog.error("Error processing JSON data : {}", e.getMessage());
+            errorLog.error("Error processing JSON data : {}", e.getMessage(), e);
 
         } catch (Exception e) {
-            errorLog.error("Error trying to call Better Stack : {}", e.getMessage());
+            errorLog.error("Error trying to call Better Stack : {}", e.getMessage(), e);
         }
 
         isFlushing.set(false);
@@ -203,7 +203,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
                     return Boolean.valueOf(value);
             }
         } catch (NumberFormatException e) {
-            errorLog.error("Error getting meta value - {}", e.getMessage());
+            errorLog.error("Error getting meta value - {}", e.getMessage(), e);
         }
 
         return value;
@@ -230,7 +230,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         try {
             connection.connect();
         } catch (Exception e) {
-            errorLog.error("Error trying to call Better Stack : {}", e.getMessage());
+            errorLog.error("Error trying to call Better Stack : {}", e.getMessage(), e);
         }
 
         try (OutputStream os = connection.getOutputStream()) {
@@ -250,7 +250,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             try {
                 flush();
             } catch (Exception e) {
-                errorLog.error(e.getMessage());
+                errorLog.error("Error trying to flush : {}", e.getMessage(), e);
             }
         }
     }
