@@ -93,7 +93,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             if (isFlushing.get())
                 return;
 
-            Thread thread = Executors.defaultThreadFactory().newThread(() -> flush());
+            Thread thread = Executors.defaultThreadFactory().newThread(new LogtailSender());
             thread.setName("logtail-appender-flush");
             thread.start();
         }
