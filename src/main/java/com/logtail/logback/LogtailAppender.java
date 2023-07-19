@@ -131,6 +131,41 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             flush();
     }
 
+    protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
+        HttpURLConnection connection = getHttpURLConnection();
+
+        try {
+            connection.connect();
+        } catch (Exception e) {
+            errorLog.error("Error trying to call Better Stack : {}", e.getMessage(), e);
+        }
+
+        try (OutputStream os = connection.getOutputStream()) {
+            byte[] input = batchToJson(flushedSize).getBytes(StandardCharsets.UTF_8);
+            os.write(input, 0, input.length);
+            os.flush();
+        }
+
+        connection.disconnect();
+
+        return new LogtailResponse(connection.getResponseMessage(), connection.getResponseCode());
+    }
+
+    protected HttpURLConnection getHttpURLConnection() throws IOException {
+        HttpURLConnection httpURLConnection = (HttpURLConnection) new URL(this.ingestUrl).openConnection();
+        httpURLConnection.setDoOutput(true);
+        httpURLConnection.setDoInput(true);
+        httpURLConnection.setRequestProperty("User-Agent", this.userAgent);
+        httpURLConnection.setRequestProperty("Accept", "application/json");
+        httpURLConnection.setRequestProperty("Content-Type", "application/json");
+        httpURLConnection.setRequestProperty("Charset", "UTF-8");
+        httpURLConnection.setRequestProperty("Authorization", String.format("Bearer %s", this.sourceToken));
+        httpURLConnection.setRequestMethod("POST");
+        httpURLConnection.setConnectTimeout(this.connectTimeout);
+        httpURLConnection.setReadTimeout(this.readTimeout);
+        return httpURLConnection;
+    }
+
     protected String batchToJson(int flushedSize) throws JsonProcessingException {
         return this.dataMapper.writeValueAsString(
             batch.subList(0, flushedSize)
@@ -207,41 +242,6 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         }
 
         return value;
-    }
-
-    protected HttpURLConnection getHttpURLConnection() throws IOException {
-        HttpURLConnection httpURLConnection = (HttpURLConnection) new URL(this.ingestUrl).openConnection();
-        httpURLConnection.setDoOutput(true);
-        httpURLConnection.setDoInput(true);
-        httpURLConnection.setRequestProperty("User-Agent", this.userAgent);
-        httpURLConnection.setRequestProperty("Accept", "application/json");
-        httpURLConnection.setRequestProperty("Content-Type", "application/json");
-        httpURLConnection.setRequestProperty("Charset", "UTF-8");
-        httpURLConnection.setRequestProperty("Authorization", String.format("Bearer %s", this.sourceToken));
-        httpURLConnection.setRequestMethod("POST");
-        httpURLConnection.setConnectTimeout(this.connectTimeout);
-        httpURLConnection.setReadTimeout(this.readTimeout);
-        return httpURLConnection;
-    }
-
-    protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
-        HttpURLConnection connection = getHttpURLConnection();
-
-        try {
-            connection.connect();
-        } catch (Exception e) {
-            errorLog.error("Error trying to call Better Stack : {}", e.getMessage(), e);
-        }
-
-        try (OutputStream os = connection.getOutputStream()) {
-            byte[] input = batchToJson(flushedSize).getBytes(StandardCharsets.UTF_8);
-            os.write(input, 0, input.length);
-            os.flush();
-        }
-
-        connection.disconnect();
-
-        return new LogtailResponse(connection.getResponseMessage(), connection.getResponseCode());
     }
 
     public class LogtailSender implements Runnable {
