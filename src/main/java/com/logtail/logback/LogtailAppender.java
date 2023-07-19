@@ -7,196 +7,209 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
-import jakarta.ws.rs.client.Client;
-import jakarta.ws.rs.client.ClientBuilder;
-import jakarta.ws.rs.client.Entity;
-import jakarta.ws.rs.client.WebTarget;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.MultivaluedHashMap;
-import jakarta.ws.rs.core.MultivaluedMap;
-import jakarta.ws.rs.core.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-/**
- * Logback appender for sending logs to <a href="https://logs.betterstack.com">betterstack.com</a>.
- *
- * @author tomas@logtail.com
- */
 public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
-    private static final String CUSTOM_USER_AGENT = "Better Stack Logback Appender";
+    // Customizable variables
+    protected String appName;
+    protected String ingestUrl = "https://in.logs.betterstack.com";
+    protected String sourceToken;
+    protected String userAgent = "Better Stack Logback Appender";
 
-    private final Logger errorLog = LoggerFactory.getLogger(LogtailAppender.class);
+    protected List<String> mdcFields = new ArrayList<>();
+    protected List<String> mdcTypes = new ArrayList<>();
 
-    private final ObjectMapper dataMapper;
-
-    private Client client;
-
-    private boolean disabled;
-
-    protected final MultivaluedMap<String, Object> headers;
-
-    // Assignable fields
+    protected int batchSize = 1000;
+    protected int batchInterval = 3000;
+    protected int connectTimeout = 5000;
+    protected int readTimeout = 10000;
 
     protected PatternLayoutEncoder encoder;
 
-    protected String appName;
+    // Non-customizable variables
+    protected Vector<ILoggingEvent> batch = new Vector<>();
+    protected AtomicBoolean isFlushing = new AtomicBoolean(false);
+    protected boolean mustReflush = false;
 
-    protected String ingestUrl = "https://in.logs.betterstack.com";
+    // Utils
+    protected ScheduledExecutorService scheduledExecutorService;
+    protected ScheduledFuture<?> scheduledFuture;
+    protected ObjectMapper dataMapper;
+    protected Logger errorLog;
+    protected boolean disabled = false;
 
-    protected List<String> mdcFields = new ArrayList<>();
+    protected ThreadFactory threadFactory = r -> {
+        Thread thread = Executors.defaultThreadFactory().newThread(r);
+        thread.setName("logtail-appender");
+        thread.setDaemon(true);
+        return thread;
+    };
 
-    protected List<String> mdcTypes = new ArrayList<>();
-
-    protected long connectTimeout = 5000;
-
-    protected long readTimeout = 10000;
-
-    private int batchSize = 1000;
-
-    private List<ILoggingEvent> batch = new ArrayList<>();
-
-
-    /**
-     * Appender initialization.
-     */
     public LogtailAppender() {
-        this.headers = new MultivaluedHashMap<>();
-        this.headers.add("User-Agent", CUSTOM_USER_AGENT);
-        this.headers.add("Accept", MediaType.APPLICATION_JSON);
-        this.headers.add("Content-Type", MediaType.APPLICATION_JSON);
+        errorLog = LoggerFactory.getLogger(LogtailAppender.class);
 
-        this.dataMapper = new ObjectMapper();
-        this.dataMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-        this.dataMapper.setPropertyNamingStrategy(PropertyNamingStrategies.UPPER_CAMEL_CASE);
+        dataMapper = new ObjectMapper()
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+                .setPropertyNamingStrategy(PropertyNamingStrategies.UPPER_CAMEL_CASE);
+
+        scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(threadFactory);
+        scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
     }
 
-    // Postpone client initialization to allow timeouts configuration
-    protected Client client() {
-        if (this.client == null) {
-            this.client = ClientBuilder.newBuilder() //
-                    .connectTimeout(this.connectTimeout, TimeUnit.MILLISECONDS) //
-                    .readTimeout(this.readTimeout, TimeUnit.MILLISECONDS) //
-                    .build();
-        }
-
-        return this.client;
-    }
-
-    /**
-     * @see ch.qos.logback.core.UnsynchronizedAppenderBase#append(java.lang.Object)
-     */
     @Override
     protected void append(ILoggingEvent event) {
-
-        if (disabled) {
+        if (disabled)
             return;
-        }
 
-        if (event.getLoggerName().equals(LogtailAppender.class.getName())) {
+        if (event.getLoggerName().equals(LogtailAppender.class.getName()))
             return;
-        }
 
-        // Length 8+ means "Bearer " plus token, as a simple test
-        if (!this.headers.containsKey("Authorization") || this.headers.getFirst("Authorization").toString().trim().length() < 8) {
+        if (this.ingestUrl.isEmpty() || this.sourceToken == null || this.sourceToken.isEmpty()) {
             errorLog.warn("Missing Source token for Better Stack - disabling LogtailAppender. Find out how to fix this at: https://betterstack.com/docs/logs/java ");
             this.disabled = true;
             return;
         }
 
-        appendToBatch(event);
-
-    }
-
-    private void appendToBatch(ILoggingEvent event) {
         batch.add(event);
 
         if (batch.size() >= batchSize) {
-            flush();
+            if (isFlushing.get())
+                return;
+
+            Thread thread = Executors.defaultThreadFactory().newThread(new LogtailSender());
+            thread.setName("logtail-appender-flush");
+            thread.start();
         }
     }
 
     protected void flush() {
-        try {
-            String jsonData = convertLogEventsToJson(batch);
+        if (batch.isEmpty())
+            return;
 
-            Response response = callIngestApi(jsonData);
+        if (isFlushing.getAndSet(true))
+            return;
+
+        this.mustReflush = false;
+
+        try {
+            int flushedSize = batch.size();
+
+            LogtailResponse response = callHttpURLConnection(flushedSize);
 
             if (response.getStatus() != 202) {
-                LogtailResponse logtailResponse = convertResponseToObject(response);
-                errorLog.error("Error calling Better Stack : {} ({})", logtailResponse.getError(), response.getStatus());
+                errorLog.error("Error calling Better Stack : {} ({})", response.getError(), response.getStatus());
             }
 
-            batch.clear();
+            batch.subList(0, flushedSize).clear();
         } catch (JsonProcessingException e) {
-            errorLog.error("Error processing JSON data : {}", e.getMessage());
+            errorLog.error("Error processing JSON data : {}", e.getMessage(), e);
 
         } catch (Exception e) {
-            errorLog.error("Error trying to call Better Stack : {}", e.getMessage());
+            errorLog.error("Error trying to call Better Stack : {}", e.getMessage(), e);
         }
+
+        isFlushing.set(false);
+
+        if (this.mustReflush || batch.size() >= batchSize)
+            flush();
     }
 
-    protected String convertLogEventsToJson(List<ILoggingEvent> events) throws JsonProcessingException {
-        List<Map<String, Object>> values = events.stream()
+    protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
+        HttpURLConnection connection = getHttpURLConnection();
+
+        try {
+            connection.connect();
+        } catch (Exception e) {
+            errorLog.error("Error trying to call Better Stack : {}", e.getMessage(), e);
+        }
+
+        try (OutputStream os = connection.getOutputStream()) {
+            byte[] input = batchToJson(flushedSize).getBytes(StandardCharsets.UTF_8);
+            os.write(input, 0, input.length);
+            os.flush();
+        }
+
+        connection.disconnect();
+
+        return new LogtailResponse(connection.getResponseMessage(), connection.getResponseCode());
+    }
+
+    protected HttpURLConnection getHttpURLConnection() throws IOException {
+        HttpURLConnection httpURLConnection = (HttpURLConnection) new URL(this.ingestUrl).openConnection();
+        httpURLConnection.setDoOutput(true);
+        httpURLConnection.setDoInput(true);
+        httpURLConnection.setRequestProperty("User-Agent", this.userAgent);
+        httpURLConnection.setRequestProperty("Accept", "application/json");
+        httpURLConnection.setRequestProperty("Content-Type", "application/json");
+        httpURLConnection.setRequestProperty("Charset", "UTF-8");
+        httpURLConnection.setRequestProperty("Authorization", String.format("Bearer %s", this.sourceToken));
+        httpURLConnection.setRequestMethod("POST");
+        httpURLConnection.setConnectTimeout(this.connectTimeout);
+        httpURLConnection.setReadTimeout(this.readTimeout);
+        return httpURLConnection;
+    }
+
+    protected String batchToJson(int flushedSize) throws JsonProcessingException {
+        return this.dataMapper.writeValueAsString(
+            new ArrayList<>(batch.subList(0, flushedSize))
+                .stream()
                 .map(this::buildPostData)
-                .collect(Collectors.toList());
-        return this.dataMapper.writeValueAsString(values);
+                .collect(Collectors.toList())
+        );
     }
 
-    protected LogtailResponse convertResponseToObject(Response response) throws JsonProcessingException {
-        return new LogtailResponse(response.readEntity(String.class), response.getStatus());
-    }
-
-    /**
-     * Call Better Stack API posting given JSON formated string.
-     *
-     * @param jsonData
-     *            a json oriented map
-     * @return the http response
-     */
-
-    protected Response callIngestApi(String jsonData) {
-        WebTarget wt = client().target(ingestUrl);
-
-        return wt.request().headers(headers).post(Entity.json(jsonData));
-    }
-
-    /**
-     * Converts a logback logging event to a JSON oriented array.
-     *
-     * @param event
-     *            the logging event
-     * @return a json oriented array
-     */
     protected Map<String, Object> buildPostData(ILoggingEvent event) {
-        Map<String, Object> line = new HashMap<>();
+        Map<String, Object> logLine = new HashMap<>();
+        logLine.put("dt", Long.toString(event.getTimeStamp()));
+        logLine.put("level", event.getLevel().toString());
+        logLine.put("app", this.appName);
+        logLine.put("message", generateLogMessage(event));
+        logLine.put("meta", generateLogMeta(event));
+        logLine.put("runtime", generateLogRuntime(event));
 
-        line.put("dt", Long.toString(event.getTimeStamp()));
-        line.put("level", event.getLevel().toString());
-        line.put("app", this.appName);
-        line.put("message", this.encoder != null ? new String(this.encoder.encode(event)) : event.getFormattedMessage());
+        return logLine;
+    }
 
-        Map<String, Object> meta = new HashMap<>();
-        meta.put("logger", event.getLoggerName());
+    protected String generateLogMessage(ILoggingEvent event) {
+        return this.encoder != null ? new String(this.encoder.encode(event)) : event.getFormattedMessage();
+    }
+
+    protected Map<String, Object> generateLogMeta(ILoggingEvent event) {
+        Map<String, Object> logMeta = new HashMap<>();
+        logMeta.put("logger", event.getLoggerName());
 
         if (!mdcFields.isEmpty() && !event.getMDCPropertyMap().isEmpty()) {
             for (Entry<String, String> entry : event.getMDCPropertyMap().entrySet()) {
                 if (mdcFields.contains(entry.getKey())) {
                     String type = mdcTypes.get(mdcFields.indexOf(entry.getKey()));
-                    meta.put(entry.getKey(), getMetaValue(type, entry.getValue()));
+                    logMeta.put(entry.getKey(), getMetaValue(type, entry.getValue()));
                 }
             }
         }
-        line.put("meta", meta);
 
-        Map<String, Object> runtime = new HashMap<>();
-        runtime.put("thread", event.getThreadName());
+        return logMeta;
+    }
+
+    protected Map<String, Object> generateLogRuntime(ILoggingEvent event) {
+        Map<String, Object> logRuntime = new HashMap<>();
+        logRuntime.put("thread", event.getThreadName());
 
         if (event.hasCallerData()) {
             StackTraceElement[] callerData = event.getCallerData();
@@ -204,65 +217,46 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             if (callerData.length > 0) {
                 StackTraceElement callerContext = callerData[0];
 
-                runtime.put("class", callerContext.getClassName());
-                runtime.put("method", callerContext.getMethodName());
-                runtime.put("file", callerContext.getFileName());
-                runtime.put("line", callerContext.getLineNumber());
+                logRuntime.put("class", callerContext.getClassName());
+                logRuntime.put("method", callerContext.getMethodName());
+                logRuntime.put("file", callerContext.getFileName());
+                logRuntime.put("line", callerContext.getLineNumber());
             }
         }
-        line.put("runtime", runtime);
 
-        return line;
+        return logRuntime;
     }
 
-    private Object getMetaValue(String type, String value) {
+    protected Object getMetaValue(String type, String value) {
         try {
-            if ("int".equals(type)) {
-                return Integer.valueOf(value);
-            }
-            if ("long".equals(type)) {
-                return Long.valueOf(value);
-            }
-            if ("boolean".equals(type)) {
-                return Boolean.valueOf(value);
+            switch (type) {
+                case "int":
+                    return Integer.valueOf(value);
+                case "long":
+                    return Long.valueOf(value);
+                case "boolean":
+                    return Boolean.valueOf(value);
             }
         } catch (NumberFormatException e) {
-            errorLog.warn("Error getting meta value : {}", e.getMessage());
+            errorLog.error("Error getting meta value - {}", e.getMessage(), e);
         }
+
         return value;
-
     }
 
-    public void setEncoder(PatternLayoutEncoder encoder) {
-        this.encoder = encoder;
-    }
-
-    /**
-     * Sets your Better Stack source token.
-     *
-     * @param sourceToken
-     *            your Better Stack source token
-     */
-    public void setSourceToken(String sourceToken) {
-        this.headers.add("Authorization", String.format("Bearer %s", sourceToken));
-    }
-
-    /**
-     * Deprecated! Kept for backward compatibility.
-     * Sets your Better Stack source token if unset.
-     *
-     * @param ingestKey
-     *            your Better Stack source token
-     */
-    public void setIngestKey(String ingestKey) {
-        if (this.headers.containsKey("Authorization")) {
-            return;
+    public class LogtailSender implements Runnable {
+        @Override
+        public void run() {
+            try {
+                flush();
+            } catch (Exception e) {
+                errorLog.error("Error trying to flush : {}", e.getMessage(), e);
+            }
         }
-        this.headers.add("Authorization", String.format("Bearer %s", ingestKey));
     }
 
     /**
-     * Sets the application name for Logtail indexation.
+     * Sets the application name for Better Stack indexation.
      *
      * @param appName
      *            application name
@@ -279,6 +273,34 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
      */
     public void setIngestUrl(String ingestUrl) {
         this.ingestUrl = ingestUrl;
+    }
+
+    /**
+     * Sets your Better Stack source token.
+     *
+     * @param sourceToken
+     *            your Better Stack source token
+     */
+    public void setSourceToken(String sourceToken) {
+        this.sourceToken = sourceToken;
+    }
+
+    /**
+     * Deprecated! Kept for backward compatibility.
+     * Sets your Better Stack source token if unset.
+     *
+     * @param ingestKey
+     *            your Better Stack source token
+     */
+    public void setIngestKey(String ingestKey) {
+        if (this.sourceToken == null) {
+            return;
+        }
+        this.sourceToken = ingestKey;
+    }
+
+    public void setUserAgent(String userAgent) {
+        this.userAgent = userAgent;
     }
 
     /**
@@ -303,26 +325,6 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Sets the connection timeout of the underlying HTTP client, in milliseconds.
-     *
-     * @param connectTimeout
-     *            client connection timeout
-     */
-    public void setConnectTimeout(Long connectTimeout) {
-        this.connectTimeout = connectTimeout;
-    }
-
-    /**
-     * Sets the read timeout of the underlying HTTP client, in milliseconds.
-     *
-     * @param readTimeout
-     *            client read timeout
-     */
-    public void setReadTimeout(Long readTimeout) {
-        this.readTimeout = readTimeout;
-    }
-
-    /**
      * Sets the batch size for the number of messages to be sent via the API
      *
      * @param batchSize
@@ -333,10 +335,47 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Get the size of the message batch
+     * Get the batch size for the number of messages to be sent via the API
      */
     public int getBatchSize() {
         return batchSize;
+    }
+
+    /**
+     * Sets the maximum wait time for a batch to be sent via the API, in milliseconds.
+     *
+     * @param batchInterval
+     *            maximum wait time for message batch [ms]
+     */
+    public void setBatchInterval(int batchInterval) {
+        scheduledFuture.cancel(false);
+        scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
+
+        this.batchInterval = batchInterval;
+    }
+
+    /**
+     * Sets the connection timeout of the underlying HTTP client, in milliseconds.
+     *
+     * @param connectTimeout
+     *            client connection timeout [ms]
+     */
+    public void setConnectTimeout(int connectTimeout) {
+        this.connectTimeout = connectTimeout;
+    }
+
+    /**
+     * Sets the read timeout of the underlying HTTP client, in milliseconds.
+     *
+     * @param readTimeout
+     *            client read timeout
+     */
+    public void setReadTimeout(int readTimeout) {
+        this.readTimeout = readTimeout;
+    }
+
+    public void setEncoder(PatternLayoutEncoder encoder) {
+        this.encoder = encoder;
     }
 
     public boolean isDisabled() {
@@ -345,6 +384,8 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     @Override
     public void stop() {
+        scheduledExecutorService.shutdown();
+        mustReflush = true;
         flush();
         super.stop();
     }

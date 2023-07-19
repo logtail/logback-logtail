@@ -15,7 +15,7 @@ import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 
 /**
- * ! LOGTAIL_INGEST_KEY  must be set as an environment variable before launching the test !
+ * ! BETTER_STACK_SOURCE_TOKEN  must be set as an environment variable before launching the test !
  * 
  * @author tomas@logtail.com
  */
@@ -42,7 +42,7 @@ public class LogtailAppenderXmlConfigTest {
         assertNotNull(appender);
 
         assertNotNull(appender.ingestUrl);
-        assertTrue(appender.headers.containsKey("Authorization"));
+        assertNotNull(appender.sourceToken);
         assertEquals("BetterStackTest", appender.appName);
 
         assertEquals(2, appender.mdcFields.size());

@@ -16,7 +16,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * ! One LOGTAIL_INGEST_KEY must be set as an environment variable before launching the test !
+ * ! BETTER_STACK_SOURCE_TOKEN must be set as an environment variable before launching the test !
  *
  * @author tomas@logtail.com
  */
@@ -70,7 +70,7 @@ public class LogtailAppenderBatchConfigSizeTest {
 
     private void isOk() {
         if (!appender.isOK() && appender.hasError()) {
-            System.out.println(appender.getLogtailResponse().getStatus() + " - " + appender.getLogtailResponse().getError());
+            System.out.println(appender.getResponse().getStatus() + " - " + appender.getResponse().getError());
         }
         if (!appender.isOK() && appender.hasException()) {
             appender.getException().printStackTrace();

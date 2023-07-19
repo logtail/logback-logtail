@@ -1,42 +1,47 @@
-
 package com.logtail.logback;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import jakarta.ws.rs.core.Response;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+
+import java.util.List;
+import java.io.IOException;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class LogtailAppenderDecorator extends LogtailAppender {
-
-    private Throwable exception;
-
-    private Response response;
-
-    private LogtailResponse logtailResponse;
-
+    private Exception exception;
+    private LogtailResponse response;
     protected int apiCalls = 0;
 
+    private ReentrantLock flushLock = new ReentrantLock();
+
     @Override
-    protected Response callIngestApi(String jsonData) {
-
+    protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
         try {
-
-            this.response = super.callIngestApi(jsonData);
             apiCalls++;
-            return response;
+            this.response = super.callHttpURLConnection(flushedSize);
 
-        } catch (Throwable t) {
-
-            this.exception = t;
-            throw t;
-
+            return this.response;
+        } catch (Exception e) {
+            this.exception = e;
+            throw e;
         }
-
     }
 
     @Override
-    protected LogtailResponse convertResponseToObject(Response response) throws JsonProcessingException, JsonMappingException {
-        this.logtailResponse = super.convertResponseToObject(response);
-        return this.logtailResponse;
+    public void flush() {
+        flushLock.lock();
+        super.flush();
+        flushLock.unlock();
+    }
+
+    public void awaitFlushCompletion(){
+        try {
+            // Wait a bit for possible asyncFlush to be initialized
+            Thread.sleep(10);
+        } catch (InterruptedException e) {
+            // Ignore interruption
+        }
+        flushLock.lock();
+        flushLock.unlock();
     }
 
     public boolean hasException() {
@@ -44,23 +49,18 @@ public class LogtailAppenderDecorator extends LogtailAppender {
     }
 
     public boolean hasError() {
-        return this.logtailResponse != null && this.logtailResponse.getError() != null;
+        return this.response != null && this.response.getError() != null;
     }
 
     public boolean isOK() {
         return this.response != null && this.response.getStatus() == 202;
     }
 
-    public Throwable getException() {
+    public Exception getException() {
         return exception;
     }
 
-    public Response getResponse() {
+    public LogtailResponse getResponse() {
         return response;
     }
-
-    public LogtailResponse getLogtailResponse() {
-        return logtailResponse;
-    }
-
 }
