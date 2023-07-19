@@ -10,8 +10,8 @@ public class LogtailAppenderDecorator extends LogtailAppender {
     @Override
     protected LogtailResponse callHttpURLConnection() throws IOException {
         try {
-            this.response = super.callHttpURLConnection();
             apiCalls++;
+            this.response = super.callHttpURLConnection();
 
             return this.response;
         } catch (Exception e) {

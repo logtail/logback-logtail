@@ -111,6 +111,27 @@ public class LogtailAppenderIntegrationTest {
     }
 
     @Test
+    public void testBatchInterval() throws InterruptedException {
+        this.appender.setBatchInterval(500);
+
+        MDC.put("requestId", "testBatchIntervalLog");
+        MDC.put("requestTime", "456");
+        this.logger.info("Single Batch Groot");
+        assertEquals(0, this.appender.apiCalls);
+
+        Thread.sleep(50);
+        assertEquals(0, this.appender.apiCalls);
+
+        Thread.sleep(500);
+        assertEquals(1, this.appender.apiCalls);
+
+        // Wait for ingester response
+        Thread.sleep(500);
+
+        isOk();
+    }
+
+    @Test
     public void testConnectTimeout() {
         this.appender.connectTimeout = 1;
         this.logger.error("I am no Groot");

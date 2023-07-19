@@ -21,6 +21,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -50,6 +51,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     // Utils
     protected ScheduledExecutorService scheduledExecutorService;
+    protected ScheduledFuture<?> scheduledFuture;
     protected ObjectMapper dataMapper;
     protected Logger errorLog;
     protected boolean disabled = false;
@@ -62,14 +64,14 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     };
 
     public LogtailAppender() {
-        this.errorLog = LoggerFactory.getLogger(LogtailAppender.class);
+        errorLog = LoggerFactory.getLogger(LogtailAppender.class);
 
-        this.dataMapper = new ObjectMapper()
+        dataMapper = new ObjectMapper()
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL)
                 .setPropertyNamingStrategy(PropertyNamingStrategies.UPPER_CAMEL_CASE);
 
-        this.scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(threadFactory);
-        this.scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
+        scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(threadFactory);
+        scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -339,6 +341,9 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
      *            maximum wait time for message batch [ms]
      */
     public void setBatchInterval(int batchInterval) {
+        scheduledFuture.cancel(false);
+        scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
+
         this.batchInterval = batchInterval;
     }
 
