@@ -110,7 +110,7 @@ public class LogtailAppenderIntegrationTest {
         assertEquals(1, this.appender.apiCalls);
 
         // Wait for ingester response
-        Thread.sleep(2000);
+        Thread.sleep(10000);
 
         isOk();
     }
