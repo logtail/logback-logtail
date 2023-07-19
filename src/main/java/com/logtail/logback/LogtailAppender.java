@@ -381,6 +381,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     @Override
     public void stop() {
+        scheduledExecutorService.shutdown();
         mustReflush = true;
         flush();
         super.stop();
