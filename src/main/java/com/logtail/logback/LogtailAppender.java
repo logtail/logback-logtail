@@ -90,7 +90,12 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         batch.add(event);
 
         if (batch.size() >= batchSize) {
-            flush();
+            if (isFlushing.get())
+                return;
+
+            Thread thread = Executors.defaultThreadFactory().newThread(() -> flush());
+            thread.setName("logtail-appender-flush");
+            thread.start();
         }
     }
 

@@ -86,7 +86,7 @@ public class LogtailAppenderIntegrationTest {
     }
 
     @Test
-    public void testBatchDefaultBatchSize() {
+    public void testBatchDefaultBatchSize() throws InterruptedException {
         // This is to easily identify and diagnose messages coming from the same test run
         String batchRunId = UUID.randomUUID().toString().toLowerCase().replace("-", "");
 
@@ -105,7 +105,12 @@ public class LogtailAppenderIntegrationTest {
         MDC.put("requestId", "testErrorLog");
         MDC.put("requestTime", 999 + "");
         this.logger.info(batchRunId + " Final Batch Groot ");
+
+        Thread.sleep(50);
         assertEquals(1, this.appender.apiCalls);
+
+        // Wait for ingester response
+        Thread.sleep(1000);
 
         isOk();
     }
