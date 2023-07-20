@@ -2,6 +2,7 @@ package com.logtail.logback;
 
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.IThrowableProxy;
 import ch.qos.logback.core.UnsynchronizedAppenderBase;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -183,6 +184,10 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         logLine.put("message", generateLogMessage(event));
         logLine.put("meta", generateLogMeta(event));
         logLine.put("runtime", generateLogRuntime(event));
+        logLine.put("args", event.getArgumentArray());
+        if (event.getThrowableProxy() != null) {
+            logLine.put("throwable", generateLogThrowable(event.getThrowableProxy()));
+        }
 
         return logLine;
     }
@@ -225,6 +230,18 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         }
 
         return logRuntime;
+    }
+
+    protected Map<String, Object> generateLogThrowable(IThrowableProxy throwable) {
+        Map<String, Object> logThrowable = new HashMap<>();
+        logThrowable.put("message", throwable.getMessage());
+        logThrowable.put("class", throwable.getClassName());
+        logThrowable.put("stackTrace", throwable.getStackTraceElementProxyArray());
+        if (throwable.getCause() != null) {
+            logThrowable.put("cause", generateLogThrowable(throwable.getCause()));
+        }
+
+        return logThrowable;
     }
 
     protected Object getMetaValue(String type, String value) {
