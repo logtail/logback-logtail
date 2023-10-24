@@ -41,6 +41,6 @@ jobs:
          with:
             timeout_seconds: 60
             max_attempts: 3
-            run: mvn -B clean package --file pom.xml
+            command: mvn -B clean package --file pom.xml
          env:
             BETTER_STACK_SOURCE_TOKEN: ${{ secrets.BETTER_STACK_SOURCE_TOKEN }}
