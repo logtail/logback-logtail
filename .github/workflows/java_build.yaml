@@ -40,7 +40,7 @@ jobs:
          uses: nick-fields/retry@v2
          with:
             timeout_seconds: 60
-            max_attempts: 3
+            max_attempts: 5
             command: mvn -B clean package --file pom.xml
          env:
             BETTER_STACK_SOURCE_TOKEN: ${{ secrets.BETTER_STACK_SOURCE_TOKEN }}
