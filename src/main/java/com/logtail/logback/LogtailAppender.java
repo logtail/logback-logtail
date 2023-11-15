@@ -37,6 +37,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected List<String> mdcFields = new ArrayList<>();
     protected List<String> mdcTypes = new ArrayList<>();
 
+    protected int maxQueueSize = 100000;
     protected int batchSize = 1000;
     protected int batchInterval = 3000;
     protected int connectTimeout = 5000;
@@ -48,6 +49,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected Vector<ILoggingEvent> batch = new Vector<>();
     protected AtomicBoolean isFlushing = new AtomicBoolean(false);
     protected boolean mustReflush = false;
+    protected boolean warnAboutMaxQueueSize = true;
 
     // Utils
     protected ScheduledExecutorService scheduledExecutorService;
@@ -88,7 +90,14 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             return;
         }
 
-        batch.add(event);
+        if (batch.size() < maxQueueSize) {
+            batch.add(event);
+        }
+
+        if (warnAboutMaxQueueSize && batch.size() == maxQueueSize) {
+            this.warnAboutMaxQueueSize = false;
+            errorLog.error("Maximum number of messages in queue reached ({}). New messages will be dropped.", maxQueueSize);
+        }
 
         if (batch.size() >= batchSize) {
             if (isFlushing.get())
@@ -119,6 +128,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             }
 
             batch.subList(0, flushedSize).clear();
+            this.warnAboutMaxQueueSize = true;
         } catch (JsonProcessingException e) {
             errorLog.error("Error processing JSON data : {}", e.getMessage(), e);
 
@@ -339,6 +349,16 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
      */
     public void setMdcTypes(String mdcTypes) {
         this.mdcTypes = Arrays.asList(mdcTypes.split(","));
+    }
+
+    /**
+     * Sets the maximum number of messages in the queue. Messages over the limit will be dropped.
+     *
+     * @param maxQueueSize
+     *            max size of the message queue
+     */
+    public void setMaxQueueSize(int maxQueueSize) {
+        this.maxQueueSize = maxQueueSize;
     }
 
     /**
