@@ -14,8 +14,7 @@
     <version>0.3.1</version>
 
     <name>${project.groupId}:${project.artifactId}</name>
-    <!-- Dummy change: Invalidate Maven package cache by changing pom.xml hash -->
-    <description>Logback Java appender for sending logs to BetterStack.com DUMMY CHANGE 1</description>
+    <description>Logback Java appender for sending logs to BetterStack.com</description>
     <url>https://github.com/logtail/logback-logtail/</url>
 
     <licenses>
