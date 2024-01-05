@@ -126,10 +126,14 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         if (isFlushing.getAndSet(true))
             return;
 
-        this.mustReflush = false;
+        mustReflush = false;
 
         try {
-            int flushedSize = Math.min(batch.size(), batchSize);
+            int flushedSize = batch.size();
+            if (flushedSize > batchSize) {
+                flushedSize = batchSize;
+                mustReflush = true;
+            }
 
             LogtailResponse response = callHttpURLConnection(flushedSize);
 
@@ -138,6 +142,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
                 this.warnAboutMaxQueueSize = true;
             } else {
                 errorLog.error("Error calling Better Stack : {} ({})", response.getError(), response.getStatus());
+                mustReflush = true;
             }
         } catch (JsonProcessingException e) {
             errorLog.error("Error processing JSON data : {}", e.getMessage(), e);
@@ -148,7 +153,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
         isFlushing.set(false);
 
-        if (this.mustReflush || batch.size() >= batchSize)
+        if (mustReflush || batch.size() >= batchSize)
             flush();
     }
 
