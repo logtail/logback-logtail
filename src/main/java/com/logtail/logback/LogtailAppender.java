@@ -133,12 +133,12 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
             LogtailResponse response = callHttpURLConnection(flushedSize);
 
-            if (response.getStatus() != 202) {
+            if (response.getStatus() == 202) {
+                batch.subList(0, flushedSize).clear();
+                this.warnAboutMaxQueueSize = true;
+            } else {
                 errorLog.error("Error calling Better Stack : {} ({})", response.getError(), response.getStatus());
             }
-
-            batch.subList(0, flushedSize).clear();
-            this.warnAboutMaxQueueSize = true;
         } catch (JsonProcessingException e) {
             errorLog.error("Error processing JSON data : {}", e.getMessage(), e);
 
