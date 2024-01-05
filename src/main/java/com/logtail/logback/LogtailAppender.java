@@ -129,7 +129,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         this.mustReflush = false;
 
         try {
-            int flushedSize = batch.size();
+            int flushedSize = Math.min(batch.size(), batchSize);
 
             LogtailResponse response = callHttpURLConnection(flushedSize);
 
