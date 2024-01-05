@@ -85,7 +85,10 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             return;
 
         if (this.ingestUrl.isEmpty() || this.sourceToken == null || this.sourceToken.isEmpty()) {
-            errorLog.warn("Missing Source token for Better Stack - disabling LogtailAppender. Find out how to fix this at: https://betterstack.com/docs/logs/java ");
+            // Prevent potential dead-lock, when a blocking logger is configured - avoid using errorLog directly in append
+            startThread("logtail-warning-logger", () -> {
+                errorLog.warn("Missing Source token for Better Stack - disabling LogtailAppender. Find out how to fix this at: https://betterstack.com/docs/logs/java ");
+            });
             this.disabled = true;
             return;
         }
@@ -96,17 +99,24 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
         if (warnAboutMaxQueueSize && batch.size() == maxQueueSize) {
             this.warnAboutMaxQueueSize = false;
-            errorLog.error("Maximum number of messages in queue reached ({}). New messages will be dropped.", maxQueueSize);
+            // Prevent potential dead-lock, when a blocking logger is configured - avoid using errorLog directly in append
+            startThread("logtail-error-logger", () -> {
+                errorLog.error("Maximum number of messages in queue reached ({}). New messages will be dropped.", maxQueueSize);
+            });
         }
 
         if (batch.size() >= batchSize) {
             if (isFlushing.get())
                 return;
 
-            Thread thread = Executors.defaultThreadFactory().newThread(new LogtailSender());
-            thread.setName("logtail-appender-flush");
-            thread.start();
+            startThread("logtail-appender-flush", new LogtailSender());
         }
+    }
+
+    protected void startThread(String threadName, Runnable runnable) {
+        Thread thread = Executors.defaultThreadFactory().newThread(runnable);
+        thread.setName(threadName);
+        thread.start();
     }
 
     protected void flush() {
