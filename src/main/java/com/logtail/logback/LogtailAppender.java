@@ -133,7 +133,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
             LogtailResponse response = callHttpURLConnection(flushedSize);
 
-            if (response.getStatus() == 202) {
+            if (response.getStatus() >= 200 && response.getStatus() < 300) {
                 batch.subList(0, flushedSize).clear();
                 this.warnAboutMaxQueueSize = true;
             } else {
