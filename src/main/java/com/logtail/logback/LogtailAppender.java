@@ -57,7 +57,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected ScheduledExecutorService scheduledExecutorService;
     protected ScheduledFuture<?> scheduledFuture;
     protected ObjectMapper dataMapper;
-    protected Logger errorLog;
+    protected Logger logger;
     protected int retrySize = 0;
     protected int retries = 0;
     protected boolean disabled = false;
@@ -70,7 +70,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     };
 
     public LogtailAppender() {
-        errorLog = LoggerFactory.getLogger(LogtailAppender.class);
+        logger = LoggerFactory.getLogger(LogtailAppender.class);
 
         dataMapper = new ObjectMapper()
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL)
@@ -89,9 +89,9 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             return;
 
         if (this.ingestUrl.isEmpty() || this.sourceToken == null || this.sourceToken.isEmpty()) {
-            // Prevent potential dead-lock, when a blocking logger is configured - avoid using errorLog directly in append
+            // Prevent potential dead-lock, when a blocking logger is configured - avoid using logger directly in append
             startThread("logtail-warning-logger", () -> {
-                errorLog.warn("Missing Source token for Better Stack - disabling LogtailAppender. Find out how to fix this at: https://betterstack.com/docs/logs/java ");
+                logger.warn("Missing Source token for Better Stack - disabling LogtailAppender. Find out how to fix this at: https://betterstack.com/docs/logs/java ");
             });
             this.disabled = true;
             return;
@@ -103,9 +103,9 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
         if (warnAboutMaxQueueSize && batch.size() == maxQueueSize) {
             this.warnAboutMaxQueueSize = false;
-            // Prevent potential dead-lock, when a blocking logger is configured - avoid using errorLog directly in append
+            // Prevent potential dead-lock, when a blocking logger is configured - avoid using logger directly in append
             startThread("logtail-error-logger", () -> {
-                errorLog.error("Maximum number of messages in queue reached ({}). New messages will be dropped.", maxQueueSize);
+                logger.error("Maximum number of messages in queue reached ({}). New messages will be dropped.", maxQueueSize);
             });
         }
 
@@ -159,7 +159,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         try {
             if (retries > maxRetries) {
                 batch.subList(0, flushedSize).clear();
-                errorLog.error("Dropped batch of {} logs.", flushedSize);
+                logger.error("Dropped batch of {} logs.", flushedSize);
                 warnAboutMaxQueueSize = true;
                 retries = 0;
 
@@ -167,7 +167,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             }
 
             if (retries > 0) {
-                errorLog.info("Retrying to send {} logs to Better Stack ({} / {})", flushedSize, retries, maxRetries);
+                logger.info("Retrying to send {} logs to Better Stack ({} / {})", flushedSize, retries, maxRetries);
                 try {
                     TimeUnit.MILLISECONDS.sleep(retrySleepMilliseconds);
                 } catch (InterruptedException e) {
@@ -178,7 +178,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             LogtailResponse response = callHttpURLConnection(flushedSize);
 
             if (response.getStatus() >= 300 || response.getStatus() < 200) {
-                errorLog.error("Error calling Better Stack : {} ({})", response.getError(), response.getStatus());
+                logger.error("Error calling Better Stack : {} ({})", response.getError(), response.getStatus());
                 retries++;
 
                 return false;
@@ -191,15 +191,15 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             return true;
 
         } catch (ConcurrentModificationException e) {
-            errorLog.error("Error clearing {} logs from batch, will retry immediately.", flushedSize, e);
+            logger.error("Error clearing {} logs from batch, will retry immediately.", flushedSize, e);
             retries = maxRetries; // No point in retrying to send the data
 
         } catch (JsonProcessingException e) {
-            errorLog.error("Error processing JSON data : {}", e.getMessage(), e);
+            logger.error("Error processing JSON data : {}", e.getMessage(), e);
             retries = maxRetries; // No point in retrying when batch cannot be processed into JSON
 
         } catch (Exception e) {
-            errorLog.error("Error trying to call Better Stack : {}", e.getMessage(), e);
+            logger.error("Error trying to call Better Stack : {}", e.getMessage(), e);
         }
 
         retries++;
@@ -213,7 +213,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         try {
             connection.connect();
         } catch (Exception e) {
-            errorLog.error("Error trying to call Better Stack : {}", e.getMessage(), e);
+            logger.error("Error trying to call Better Stack : {}", e.getMessage(), e);
         }
 
         try (OutputStream os = connection.getOutputStream()) {
@@ -330,7 +330,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
                     return Boolean.valueOf(value);
             }
         } catch (NumberFormatException e) {
-            errorLog.error("Error getting meta value - {}", e.getMessage(), e);
+            logger.error("Error getting meta value - {}", e.getMessage(), e);
         }
 
         return value;
@@ -342,7 +342,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             try {
                 flush();
             } catch (Exception e) {
-                errorLog.error("Error trying to flush : {}", e.getMessage(), e);
+                logger.error("Error trying to flush : {}", e.getMessage(), e);
             }
         }
     }
