@@ -42,6 +42,8 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected int batchInterval = 3000;
     protected int connectTimeout = 5000;
     protected int readTimeout = 10000;
+    protected int maxRetries = 5;
+    protected int retrySleepMilliseconds = 300;
 
     protected PatternLayoutEncoder encoder;
 
@@ -56,6 +58,8 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected ScheduledFuture<?> scheduledFuture;
     protected ObjectMapper dataMapper;
     protected Logger errorLog;
+    protected int retrySize = 0;
+    protected int retries = 0;
     protected boolean disabled = false;
 
     protected ThreadFactory threadFactory = r -> {
@@ -123,38 +127,84 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         if (batch.isEmpty())
             return;
 
+        // Guaranteed to not be running concurrently
         if (isFlushing.getAndSet(true))
             return;
 
         mustReflush = false;
 
-        try {
-            int flushedSize = batch.size();
-            if (flushedSize > batchSize) {
-                flushedSize = batchSize;
-                mustReflush = true;
-            }
+        int flushedSize = batch.size();
+        if (flushedSize > batchSize) {
+            flushedSize = batchSize;
+            mustReflush = true;
+        }
+        if (retries > 0 && flushedSize > retrySize) {
+            flushedSize = retrySize;
+            mustReflush = true;
+        }
 
-            LogtailResponse response = callHttpURLConnection(flushedSize);
-
-            if (response.getStatus() >= 200 && response.getStatus() < 300) {
-                batch.subList(0, flushedSize).clear();
-                this.warnAboutMaxQueueSize = true;
-            } else {
-                errorLog.error("Error calling Better Stack : {} ({})", response.getError(), response.getStatus());
-                mustReflush = true;
-            }
-        } catch (JsonProcessingException e) {
-            errorLog.error("Error processing JSON data : {}", e.getMessage(), e);
-
-        } catch (Exception e) {
-            errorLog.error("Error trying to call Better Stack : {}", e.getMessage(), e);
+        if (!flushLogs(flushedSize)) {
+            mustReflush = true;
         }
 
         isFlushing.set(false);
 
         if (mustReflush || batch.size() >= batchSize)
             flush();
+    }
+
+    protected boolean flushLogs(int flushedSize) {
+        retrySize = flushedSize;
+
+        try {
+            if (retries > maxRetries) {
+                batch.subList(0, flushedSize).clear();
+                errorLog.error("Dropped batch of {} logs.", flushedSize);
+                warnAboutMaxQueueSize = true;
+                retries = 0;
+
+                return true;
+            }
+
+            if (retries > 0) {
+                errorLog.info("Retrying to send {} logs to Better Stack ({} / {})", flushedSize, retries, maxRetries);
+                try {
+                    TimeUnit.MILLISECONDS.sleep(retrySleepMilliseconds);
+                } catch (InterruptedException e) {
+                    // Continue
+                }
+            }
+
+            LogtailResponse response = callHttpURLConnection(flushedSize);
+
+            if (response.getStatus() >= 300 || response.getStatus() < 200) {
+                errorLog.error("Error calling Better Stack : {} ({})", response.getError(), response.getStatus());
+                retries++;
+
+                return false;
+            }
+
+            batch.subList(0, flushedSize).clear();
+            warnAboutMaxQueueSize = true;
+            retries = 0;
+
+            return true;
+
+        } catch (ConcurrentModificationException e) {
+            errorLog.error("Error clearing {} logs from batch, will retry immediately.", flushedSize, e);
+            retries = maxRetries; // No point in retrying to send the data
+
+        } catch (JsonProcessingException e) {
+            errorLog.error("Error processing JSON data : {}", e.getMessage(), e);
+            retries = maxRetries; // No point in retrying when batch cannot be processed into JSON
+
+        } catch (Exception e) {
+            errorLog.error("Error trying to call Better Stack : {}", e.getMessage(), e);
+        }
+
+        retries++;
+
+        return false;
     }
 
     protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
@@ -424,6 +474,26 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
      */
     public void setReadTimeout(int readTimeout) {
         this.readTimeout = readTimeout;
+    }
+
+    /**
+     * Sets the maximum number of retries for sending logs to Better Stack. After that, current batch of logs will be dropped.
+     *
+     * @param maxRetries
+     *            max number of retries for sending logs
+     */
+    public void setMaxRetries(int maxRetries) {
+        this.maxRetries = maxRetries;
+    }
+
+    /**
+     * Sets the number of milliseconds to sleep before retrying to send logs to Better Stack.
+     *
+     * @param retrySleepMilliseconds
+     *            number of milliseconds to sleep before retry
+     */
+    public void setRetrySleepMilliseconds(int retrySleepMilliseconds) {
+        this.retrySleepMilliseconds = retrySleepMilliseconds;
     }
 
     public void setEncoder(PatternLayoutEncoder encoder) {
