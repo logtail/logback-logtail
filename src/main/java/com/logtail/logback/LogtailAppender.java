@@ -343,6 +343,9 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
                 flush();
             } catch (Exception e) {
                 logger.error("Error trying to flush : {}", e.getMessage(), e);
+                if (isFlushing.get()) {
+                    isFlushing.set(false);
+                }
             }
         }
     }
