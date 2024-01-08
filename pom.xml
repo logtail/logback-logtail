@@ -11,7 +11,7 @@
     <groupId>com.logtail</groupId>
     <artifactId>logback-logtail</artifactId>
     <packaging>jar</packaging>
-    <version>0.3.1</version>
+    <version>0.3.2</version>
 
     <name>${project.groupId}:${project.artifactId}</name>
     <description>Logback Java appender for sending logs to BetterStack.com</description>
