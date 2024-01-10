@@ -4,6 +4,7 @@
         <sourceToken><!-- YOUR SOURCE TOKEN --></sourceToken>
         <mdcFields>requestId,requestTime</mdcFields>
         <mdcTypes>string,int</mdcTypes>
+        <objectMapperModule>com.fasterxml.jackson.datatype.jsr310.JavaTimeModule</objectMapperModule>
     </appender>
 
     <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
