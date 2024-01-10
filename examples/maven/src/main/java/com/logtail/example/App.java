@@ -6,6 +6,7 @@ import org.slf4j.MDC;
 
 import java.awt.Point;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Random;
 import java.util.UUID;
 
@@ -30,5 +31,7 @@ public class App {
         } catch (RuntimeException exception) {
             logger.error("Logging a thrown exception.", exception);
         }
+
+        logger.info("Logging local datetime serialized via JavaTimeModule.", LocalDateTime.now());
     }
 }

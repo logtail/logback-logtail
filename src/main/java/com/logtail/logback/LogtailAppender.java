@@ -6,6 +6,7 @@ import ch.qos.logback.classic.spi.IThrowableProxy;
 import ch.qos.logback.core.UnsynchronizedAppenderBase;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.Module;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import org.slf4j.Logger;
@@ -497,6 +498,22 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
      */
     public void setRetrySleepMilliseconds(int retrySleepMilliseconds) {
         this.retrySleepMilliseconds = retrySleepMilliseconds;
+    }
+
+    /**
+     * Registers a dynamically loaded Module object to ObjectMapper used for serialization of logged data.
+     *
+     * @param className
+     *            fully qualified class name of the module, eg. "com.fasterxml.jackson.datatype.jsr310.JavaTimeModule"
+     */
+    public void setObjectMapperModule(String className) {
+        try {
+            Module module = (Module) Class.forName(className).newInstance();
+            dataMapper.registerModule(module);
+            logger.info("Module '{}' successfully registered in ObjectMapper.", className);
+        } catch (ClassNotFoundException|InstantiationException|IllegalAccessException e) {
+            logger.error("Module '{}' couldn't be registered in ObjectMapper : ", className, e);
+        }
     }
 
     public void setEncoder(PatternLayoutEncoder encoder) {
