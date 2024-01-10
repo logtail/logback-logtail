@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
-    <appender name="LogtailHttp" class="com.logtail.logback.LogtailAppender">
+    <appender name="Logtail" class="com.logtail.logback.LogtailAppender">
         <encoder>
             <pattern>[%thread] %msg%n</pattern>
         </encoder>
@@ -12,7 +12,7 @@
     </appender>
 
     <root level="INFO">
-        <appender-ref ref="LogtailHttp" />
+        <appender-ref ref="Logtail" />
     </root>
 
 </configuration>

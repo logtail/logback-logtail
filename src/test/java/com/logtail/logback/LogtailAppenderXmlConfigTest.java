@@ -8,7 +8,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.LoggerFactory;
 
-import ch.qos.logback.classic.AsyncAppender;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
@@ -35,10 +34,8 @@ public class LogtailAppenderXmlConfigTest {
     public void testLogtailAppenderConfiguration() {
 
         Logger rootLogger = (Logger) LoggerFactory.getLogger("ROOT");
-        AsyncAppender asyncAppender = (AsyncAppender) rootLogger.getAppender("Logtail");
-        assertNotNull("Logtail AsyncAppender not found, meaning that the xmlConfig property set up failed", asyncAppender);
 
-        LogtailAppender appender = (LogtailAppender) asyncAppender.getAppender("LogtailHttp");
+        LogtailAppender appender = (LogtailAppender) rootLogger.getAppender("Logtail");
         assertNotNull(appender);
 
         assertNotNull(appender.ingestUrl);
