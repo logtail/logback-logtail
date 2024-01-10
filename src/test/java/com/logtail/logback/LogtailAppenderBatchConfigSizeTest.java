@@ -35,7 +35,7 @@ public class LogtailAppenderBatchConfigSizeTest {
         configurator.doConfigure("src/test/resources/logback-batch-test.xml");
 
         Logger rootLogger = (Logger) LoggerFactory.getLogger("ROOT");
-        LogtailAppenderDecorator appender = (LogtailAppenderDecorator) rootLogger.getAppender("Logtail");
+        appender = (LogtailAppenderDecorator) rootLogger.getAppender("Logtail");
         assertEquals(200, appender.getBatchSize());
     }
 

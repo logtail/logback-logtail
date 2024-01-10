@@ -34,7 +34,7 @@ public class LogtailAppenderShutdownTest {
         configurator.doConfigure("src/test/resources/logback-shutdown-test.xml");
 
         Logger rootLogger = (Logger) LoggerFactory.getLogger("ROOT");
-        LogtailAppenderDecorator appender = (LogtailAppenderDecorator) rootLogger.getAppender("Logtail");
+        appender = (LogtailAppenderDecorator) rootLogger.getAppender("Logtail");
         assertEquals(10, appender.getBatchSize());
     }
 
