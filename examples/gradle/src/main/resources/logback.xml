@@ -1,20 +1,17 @@
 <configuration debug="true">
-    <appender name="LogtailHttp" class="com.logtail.logback.LogtailAppender">
+    <appender name="Logtail" class="com.logtail.logback.LogtailAppender">
         <appName>Better Stack Gradle example app</appName>
-        <batchSize>1</batchSize>
         <sourceToken><!-- YOUR SOURCE TOKEN --></sourceToken>
         <mdcFields>requestId,requestTime</mdcFields>
         <mdcTypes>string,int</mdcTypes>
     </appender>
 
-    <appender name="Logtail" class="ch.qos.logback.classic.AsyncAppender">
-        <appender-ref ref="LogtailHttp" />
-        <queueSize>1</queueSize>
-        <discardingThreshold>0</discardingThreshold>
-        <includeCallerData>true</includeCallerData>
-    </appender>
-
-    <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
+    <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">>
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <level>ERROR</level>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>DENY</onMismatch>
+        </filter>
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %msg%n</pattern>
         </encoder>

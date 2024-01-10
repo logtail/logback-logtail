@@ -31,7 +31,7 @@ public class LogtailAppenderXmlEmptyConfigTest {
     public void testLogtailAppenderConfiguration() {
         Logger rootLogger = (Logger) LoggerFactory.getLogger("ROOT");
 
-        LogtailAppender appender = (LogtailAppender) rootLogger.getAppender("LogtailHttp");
+        LogtailAppender appender = (LogtailAppender) rootLogger.getAppender("Logtail");
         assertNotNull(appender);
         
         rootLogger.info("I am Groot");

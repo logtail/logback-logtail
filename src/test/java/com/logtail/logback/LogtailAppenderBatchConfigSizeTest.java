@@ -1,6 +1,5 @@
 package com.logtail.logback;
 
-import ch.qos.logback.classic.AsyncAppender;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
@@ -36,8 +35,7 @@ public class LogtailAppenderBatchConfigSizeTest {
         configurator.doConfigure("src/test/resources/logback-batch-test.xml");
 
         Logger rootLogger = (Logger) LoggerFactory.getLogger("ROOT");
-        AsyncAppender asyncAppender = (AsyncAppender) rootLogger.getAppender("Logtail");
-        appender = (LogtailAppenderDecorator) asyncAppender.getAppender("LogtailHttp");
+        LogtailAppenderDecorator appender = (LogtailAppenderDecorator) rootLogger.getAppender("Logtail");
         assertEquals(200, appender.getBatchSize());
     }
 
