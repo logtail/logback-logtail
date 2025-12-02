@@ -161,7 +161,9 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
         try {
             if (retries > maxRetries) {
-                batch.subList(0, flushedSize).clear();
+                synchronized (batch) {
+                    batch.subList(0, flushedSize).clear();
+                }
                 logger.error("Dropped batch of {} logs.", flushedSize);
                 warnAboutMaxQueueSize = true;
                 retries = 0;
@@ -187,7 +189,9 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
                 return false;
             }
 
-            batch.subList(0, flushedSize).clear();
+            synchronized (batch) {
+                batch.subList(0, flushedSize).clear();
+            }
             warnAboutMaxQueueSize = true;
             retries = 0;
 
@@ -246,9 +250,12 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     protected String batchToJson(int flushedSize) throws JsonProcessingException {
+        List<ILoggingEvent> snapshot;
+        synchronized (batch) {
+            snapshot = new ArrayList<>(batch.subList(0, flushedSize));
+        }
         return this.dataMapper.writeValueAsString(
-            new ArrayList<>(batch.subList(0, flushedSize))
-                .stream()
+            snapshot.stream()
                 .map(this::buildPostData)
                 .collect(Collectors.toList())
         );
