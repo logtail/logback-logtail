@@ -4,10 +4,11 @@ plugins {
 
 repositories {
     mavenCentral()
+    mavenLocal()
 }
 
 dependencies {
-    implementation 'com.logtail:logback-logtail:0.3.4'
+    implementation files('../../target/logback-logtail-0.3.4.jar')
     implementation 'ch.qos.logback:logback-classic:1.2.11'
     implementation 'ch.qos.logback:logback-core:1.2.11'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.5'
