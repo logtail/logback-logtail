@@ -6,9 +6,6 @@
         <mdcFields>requestId,requestTime</mdcFields>
         <mdcTypes>string,int</mdcTypes>
         <objectMapperModule>com.fasterxml.jackson.datatype.jsr310.JavaTimeModule</objectMapperModule>
-        <!-- Small batch size to trigger frequent flushes and reproduce race condition -->
-        <batchSize>10</batchSize>
-        <batchInterval>100</batchInterval>
     </appender>
 
     <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
