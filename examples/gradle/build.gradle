@@ -8,7 +8,7 @@ repositories {
 }
 
 dependencies {
-    implementation files('../../target/logback-logtail-0.3.4.jar')
+    implementation files('../../target/logback-logtail-0.3.5.jar')
     implementation 'ch.qos.logback:logback-classic:1.2.11'
     implementation 'ch.qos.logback:logback-core:1.2.11'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.5'
