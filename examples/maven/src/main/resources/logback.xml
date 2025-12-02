@@ -2,6 +2,7 @@
     <appender name="Logtail" class="com.logtail.logback.LogtailAppender">
         <appName>Better Stack Maven example app</appName>
         <sourceToken><!-- YOUR SOURCE TOKEN --></sourceToken>
+        <ingestUrl>https://<!-- YOUR INGESTING HOST --></ingestUrl>
         <mdcFields>requestId,requestTime</mdcFields>
         <mdcTypes>string,int</mdcTypes>
         <objectMapperModule>com.fasterxml.jackson.datatype.jsr310.JavaTimeModule</objectMapperModule>
