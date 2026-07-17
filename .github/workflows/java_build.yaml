@@ -45,3 +45,4 @@ jobs:
             command: mvn -B clean package --file pom.xml
          env:
             BETTER_STACK_SOURCE_TOKEN: ${{ secrets.BETTER_STACK_SOURCE_TOKEN }}
+            BETTER_STACK_INGESTING_HOST: ${{ secrets.BETTER_STACK_INGESTING_HOST }}

@@ -17,6 +17,7 @@ import static org.junit.Assert.*;
 
 /**
  * ! BETTER_STACK_SOURCE_TOKEN must be set as an environment variable before launching the test !
+ * BETTER_STACK_INGESTING_HOST can be set to the source's ingesting host (defaults to in.logs.betterstack.com)
  *
  *
  * @author tomas@logtail.com
@@ -39,6 +40,10 @@ public class LogtailAppenderIntegrationTest {
         this.appender = new LogtailAppenderDecorator();
         this.appender.setContext((LoggerContext) LoggerFactory.getILoggerFactory());
         this.appender.setSourceToken(System.getenv("BETTER_STACK_SOURCE_TOKEN"));
+        String ingestingHost = System.getenv("BETTER_STACK_INGESTING_HOST");
+        if (ingestingHost != null && !ingestingHost.isEmpty()) {
+            this.appender.setIngestUrl(ingestingHost.startsWith("http") ? ingestingHost : "https://" + ingestingHost);
+        }
         this.appender.start();
 
         this.logger.addAppender(appender);
