@@ -23,24 +23,26 @@ jobs:
 
       steps:
       -  name: Checkout project
-         uses: actions/checkout@v3
+         uses: actions/checkout@v7
          with:
             fetch-depth: 0
       -  name: Set up JDK
-         uses: actions/setup-java@v1
+         uses: actions/setup-java@v5
          with:
+            distribution: temurin
             java-version: ${{ matrix.java-version }}
       -  name: Cache Maven packages
-         uses: actions/cache@v1
+         uses: actions/cache@v6
          with:
             path: ~/.m2
             key: ${{ runner.os }}-m2-java${{ matrix.java-version }}-${{ hashFiles('**/pom.xml') }}
             restore-keys: ${{ runner.os }}-m2
       -  name: Build with Maven
-         uses: nick-fields/retry@v2
+         uses: nick-fields/retry@v4
          with:
             timeout_seconds: 60
             max_attempts: 5
             command: mvn -B clean package --file pom.xml
          env:
             BETTER_STACK_SOURCE_TOKEN: ${{ secrets.BETTER_STACK_SOURCE_TOKEN }}
+            BETTER_STACK_INGESTING_HOST: ${{ secrets.BETTER_STACK_INGESTING_HOST }}

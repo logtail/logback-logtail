@@ -4,6 +4,7 @@
     <appender name="Logtail" class="com.logtail.logback.LogtailAppenderDecorator">
         <appName>BetterStackTest</appName>
         <sourceToken>${BETTER_STACK_SOURCE_TOKEN}</sourceToken>
+        <ingestUrl>https://${BETTER_STACK_INGESTING_HOST:-in.logs.betterstack.com}</ingestUrl>
         <batchSize>10</batchSize>
         <mdcFields>requestId,requestTime</mdcFields>
         <mdcTypes>string,int</mdcTypes>
