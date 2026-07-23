@@ -6,6 +6,8 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.LoggingEvent;
 import org.junit.Test;
 
+import java.util.Collections;
+
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -34,6 +36,18 @@ public class LogtailAppenderCyclicArgumentTest {
         }
     }
 
+    // Stand-in for any argument Jackson chokes on for a reason other than a cycle
+    static class Unserializable {
+        public String getValue() {
+            throw new UnsupportedOperationException("not available");
+        }
+
+        @Override
+        public String toString() {
+            return "Unserializable value";
+        }
+    }
+
     @Test
     public void testCyclicArgumentDoesNotDropTheBatch() throws Exception {
         Parent parent = new Parent();
@@ -52,15 +66,39 @@ public class LogtailAppenderCyclicArgumentTest {
         // Equivalent to HikariPool's: LOGGER.debug("{} - Added connection {}", poolName, poolEntry.connection);
         appender.append(new LoggingEvent(Logger.FQCN, logger, Level.INFO, "Some object graph: {}",
                 null, new Object[]{parent}));
-        appender.append(new LoggingEvent(Logger.FQCN, logger, Level.INFO, "Log line after the cyclic one",
-                null, new Object[]{}));
+        appender.append(new LoggingEvent(Logger.FQCN, logger, Level.INFO, "Log line after the cyclic one: {}",
+                null, new Object[]{Collections.singletonMap("orderId", 42)}));
 
-        // Currently throws JsonMappingException (infinite recursion / nesting depth exceeded),
-        // which makes flushLogs() give up on the whole batch.
         String json = appender.batchToJson(3);
 
         assertTrue("Log line before the cyclic one must be sent", json.contains("Log line before the cyclic one"));
         assertTrue("The cyclic log line itself must be sent", json.contains("Some object graph:"));
-        assertTrue("Log line after the cyclic one must be sent", json.contains("Log line after the cyclic one"));
+        assertTrue("Log line after the cyclic one must be sent", json.contains("Log line after the cyclic one:"));
+
+        assertTrue("The cyclic argument must be sent as its string representation",
+                json.contains(Parent.class.getName() + "@"));
+        assertTrue("Serializable arguments of other log lines must stay structured",
+                json.contains("{\"orderId\":42}"));
+    }
+
+    @Test
+    public void testUnserializableArgumentDoesNotDropTheBatch() throws Exception {
+        Logger logger = new LoggerContext().getLogger(Logger.ROOT_LOGGER_NAME);
+
+        LogtailAppender appender = new LogtailAppender();
+        appender.setAppName("BetterStackTest");
+        appender.setSourceToken("dummy-token");
+
+        appender.append(new LoggingEvent(Logger.FQCN, logger, Level.INFO, "Log line with a broken argument: {}",
+                null, new Object[]{new Unserializable()}));
+        appender.append(new LoggingEvent(Logger.FQCN, logger, Level.INFO, "Log line after the broken one",
+                null, new Object[]{}));
+
+        String json = appender.batchToJson(2);
+
+        assertTrue("The broken log line itself must be sent", json.contains("Log line with a broken argument:"));
+        assertTrue("Log line after the broken one must be sent", json.contains("Log line after the broken one"));
+        assertTrue("The broken argument must be sent as its string representation",
+                json.contains("Unserializable value"));
     }
 }

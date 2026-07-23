@@ -254,11 +254,79 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         synchronized (batch) {
             snapshot = new ArrayList<>(batch.subList(0, flushedSize));
         }
-        return this.dataMapper.writeValueAsString(
-            snapshot.stream()
+        List<Map<String, Object>> logLines = snapshot.stream()
                 .map(this::buildPostData)
-                .collect(Collectors.toList())
-        );
+                .collect(Collectors.toList());
+
+        try {
+            return this.dataMapper.writeValueAsString(logLines);
+
+        } catch (Exception | StackOverflowError e) {
+            // A single log line with an unserializable argument - e.g. a cyclic object graph such as a
+            // pooled JDBC connection - must not prevent the rest of the batch from being sent.
+            logger.warn("Error processing JSON data, replacing unserializable log values : {}", e.getMessage());
+
+            return this.dataMapper.writeValueAsString(sanitizeLogLines(logLines));
+        }
+    }
+
+    /**
+     * Replaces values that Jackson cannot serialize with their string representation, so that one bad
+     * log line doesn't take down the whole batch. Log lines that serialize fine are left untouched.
+     */
+    protected List<Map<String, Object>> sanitizeLogLines(List<Map<String, Object>> logLines) {
+        List<Map<String, Object>> sanitized = new ArrayList<>(logLines.size());
+
+        for (Map<String, Object> logLine : logLines) {
+            sanitized.add(isSerializable(logLine) ? logLine : sanitizeLogLine(logLine));
+        }
+
+        return sanitized;
+    }
+
+    protected Map<String, Object> sanitizeLogLine(Map<String, Object> logLine) {
+        Map<String, Object> sanitized = new HashMap<>(logLine);
+
+        for (Entry<String, Object> entry : logLine.entrySet()) {
+            if (!isSerializable(entry.getValue())) {
+                sanitized.put(entry.getKey(), sanitizeLogValue(entry.getValue()));
+            }
+        }
+
+        return sanitized;
+    }
+
+    protected Object sanitizeLogValue(Object value) {
+        // Keep the serializable arguments of a log line intact, replace only the offending ones
+        if (value instanceof Object[]) {
+            Object[] values = (Object[]) value;
+            Object[] sanitized = new Object[values.length];
+
+            for (int i = 0; i < values.length; i++) {
+                sanitized[i] = isSerializable(values[i]) ? values[i] : toSafeString(values[i]);
+            }
+
+            return sanitized;
+        }
+
+        return toSafeString(value);
+    }
+
+    protected String toSafeString(Object value) {
+        try {
+            return String.valueOf(value);
+        } catch (Exception | StackOverflowError e) {
+            return value.getClass().getName();
+        }
+    }
+
+    protected boolean isSerializable(Object value) {
+        try {
+            this.dataMapper.writeValueAsString(value);
+            return true;
+        } catch (Exception | StackOverflowError e) {
+            return false;
+        }
     }
 
     protected Map<String, Object> buildPostData(ILoggingEvent event) {
