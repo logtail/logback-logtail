@@ -70,10 +70,19 @@ public class BestEffortSerialization extends SimpleModule {
      * string instead of failing the serialization of everything around it.
      */
     public static Object guard(Object value) {
-        if (value == null || value instanceof String || value instanceof Number || value instanceof Boolean) {
+        if (value == null || isSafeScalar(value)) {
             return value;
         }
         return new Guarded(value);
+    }
+
+    // Only exact final JDK types whose serializers cannot fail may skip the guard - an instanceof check
+    // is not enough, e.g. a Number subclass can still throw from the toString Jackson serializes it with
+    private static boolean isSafeScalar(Object value) {
+        Class<?> type = value.getClass();
+        return type == String.class || type == Boolean.class || type == Character.class
+                || type == Integer.class || type == Long.class || type == Double.class
+                || type == Float.class || type == Short.class || type == Byte.class;
     }
 
     static final class Guarded {
