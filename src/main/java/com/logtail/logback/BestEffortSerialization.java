@@ -144,6 +144,11 @@ public class BestEffortSerialization extends SimpleModule {
         }
 
         @Override
+        public boolean isEmpty(SerializerProvider provider, Object value) {
+            return delegate.isEmpty(provider, value);
+        }
+
+        @Override
         public JsonSerializer<Object> unwrappingSerializer(NameTransformer transformer) {
             return new CycleGuard(delegate.unwrappingSerializer(transformer));
         }
