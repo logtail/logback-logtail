@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ser.ResolvableSerializer;
 import com.fasterxml.jackson.databind.type.ArrayType;
 import com.fasterxml.jackson.databind.type.CollectionType;
 import com.fasterxml.jackson.databind.type.MapType;
+import com.fasterxml.jackson.databind.util.NameTransformer;
 import com.fasterxml.jackson.databind.util.TokenBuffer;
 
 import java.io.IOException;
@@ -140,6 +141,16 @@ public class BestEffortSerialization extends SimpleModule {
             } finally {
                 leave(provider, value);
             }
+        }
+
+        @Override
+        public JsonSerializer<Object> unwrappingSerializer(NameTransformer transformer) {
+            return new CycleGuard(delegate.unwrappingSerializer(transformer));
+        }
+
+        @Override
+        public boolean isUnwrappingSerializer() {
+            return delegate.isUnwrappingSerializer();
         }
 
         @Override
