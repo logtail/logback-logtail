@@ -48,6 +48,35 @@ public class LogtailAppenderSerializationTest {
         }
     }
 
+    // Number is not final: a subclass can fail during serialization (Jackson stringifies unknown
+    // Number types via toString), and scalar-looking arguments must not get a free pass because of it
+    static class BrokenNumber extends Number {
+        @Override
+        public int intValue() {
+            throw new UnsupportedOperationException("not available");
+        }
+
+        @Override
+        public long longValue() {
+            throw new UnsupportedOperationException("not available");
+        }
+
+        @Override
+        public float floatValue() {
+            throw new UnsupportedOperationException("not available");
+        }
+
+        @Override
+        public double doubleValue() {
+            throw new UnsupportedOperationException("not available");
+        }
+
+        @Override
+        public String toString() {
+            throw new UnsupportedOperationException("not available");
+        }
+    }
+
     private LogtailAppender appender;
     private Logger logger;
 
@@ -121,6 +150,19 @@ public class LogtailAppenderSerializationTest {
         assertTrue("Log line after the broken one must be sent", json.contains("Log line after the broken one"));
         assertTrue("The broken argument must be replaced with a marker naming its class",
                 json.contains("\"<omitted unserializable " + Unserializable.class.getName() + ">\""));
+    }
+
+    @Test
+    public void testBrokenScalarLikeArgumentDoesNotDropTheBatch() throws Exception {
+        log("Log line with a broken number: {}", new BrokenNumber());
+        log("Log line after the broken number");
+
+        String json = appender.batchToJson(2);
+
+        assertTrue("The broken log line itself must be sent", json.contains("Log line with a broken number:"));
+        assertTrue("Log line after the broken number must be sent", json.contains("Log line after the broken number"));
+        assertTrue("The broken argument must be replaced with a marker naming its class",
+                json.contains("\"<omitted unserializable " + BrokenNumber.class.getName() + ">\""));
     }
 
     @Test
