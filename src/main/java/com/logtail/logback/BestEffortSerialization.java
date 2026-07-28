@@ -107,6 +107,13 @@ public class BestEffortSerialization extends SimpleModule {
             }
             buffer.serialize(gen);
         }
+
+        @Override
+        public void serializeWithType(Guarded guarded, JsonGenerator gen, SerializerProvider provider, TypeSerializer typeSer) throws IOException {
+            // The wrapper is invisible in the output, so there is no type id to write for it - the
+            // wrapped value's own serializer emits its type info inside the buffer
+            serialize(guarded, gen, provider);
+        }
     }
 
     static final class CycleGuard extends JsonSerializer<Object> implements ContextualSerializer, ResolvableSerializer {
