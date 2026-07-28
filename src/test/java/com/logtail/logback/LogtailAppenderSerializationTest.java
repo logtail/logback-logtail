@@ -4,6 +4,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.LoggingEvent;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -150,6 +152,24 @@ public class LogtailAppenderSerializationTest {
         assertTrue("Log line after the broken one must be sent", json.contains("Log line after the broken one"));
         assertTrue("The broken argument must be replaced with a marker naming its class",
                 json.contains("\"<omitted unserializable " + Unserializable.class.getName() + ">\""));
+    }
+
+    @Test
+    public void testCyclicArgumentOutsideGuardedTypesDoesNotDropTheBatch() throws Exception {
+        // JsonNode serializes through its own JsonSerializable path, which no serializer-modifier hook
+        // wraps - the cycle guard cannot see this cycle, so it must fall back to whole-argument omission
+        ObjectNode node = JsonNodeFactory.instance.objectNode();
+        node.put("key", "value");
+        node.set("self", node);
+
+        log("A cyclic JsonNode: {}", node);
+        log("Log line after the cyclic node");
+
+        String json = appender.batchToJson(2);
+
+        assertTrue("Log line after the cyclic node must be sent", json.contains("Log line after the cyclic node"));
+        assertTrue("A cycle the cycle guard cannot see must still be omitted as a whole argument",
+                json.contains("\"<omitted unserializable " + ObjectNode.class.getName() + ">\""));
     }
 
     @Test

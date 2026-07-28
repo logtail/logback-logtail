@@ -3,12 +3,16 @@ package com.logtail.logback;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonUnwrapped;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  * For anything that serializes fine, the module must be invisible: its output has to be
@@ -55,5 +59,19 @@ public class BestEffortSerializationTest {
     public void testEmptyValueInclusionIsRespected() throws Exception {
         assertEquals(plain.writeValueAsString(new NonEmptyItems()),
                 bestEffort.writeValueAsString(new NonEmptyItems()));
+    }
+
+    @Test
+    public void testGuardedValuesSurvivePolymorphicTyping() throws Exception {
+        ObjectMapper typed = new ObjectMapper()
+                .registerModule(new BestEffortSerialization())
+                .activateDefaultTyping(LaissezFaireSubTypeValidator.instance, ObjectMapper.DefaultTyping.OBJECT_AND_NON_CONCRETE);
+
+        Map<String, Object> value = new HashMap<>();
+        value.put("key", "value");
+
+        String json = typed.writeValueAsString(new Object[]{BestEffortSerialization.guard(value)});
+
+        assertTrue("Guarded values must serialize under polymorphic typing", json.contains("\"key\":\"value\""));
     }
 }
