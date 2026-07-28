@@ -77,7 +77,8 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         dataMapper = new ObjectMapper()
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL)
                 .setPropertyNamingStrategy(PropertyNamingStrategies.UPPER_CAMEL_CASE)
-                .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
+                .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
+                .registerModule(new BestEffortSerialization());
 
         scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(threadFactory);
         scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
@@ -269,12 +270,19 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         logLine.put("message", generateLogMessage(event));
         logLine.put("meta", generateLogMeta(event));
         logLine.put("runtime", generateLogRuntime(event));
-        logLine.put("args", event.getArgumentArray());
+        logLine.put("args", guardArguments(event.getArgumentArray()));
         if (event.getThrowableProxy() != null) {
             logLine.put("throwable", generateLogThrowable(event.getThrowableProxy()));
         }
 
         return logLine;
+    }
+
+    protected Object[] guardArguments(Object[] arguments) {
+        if (arguments == null) {
+            return null;
+        }
+        return Arrays.stream(arguments).map(BestEffortSerialization::guard).toArray();
     }
 
     protected String generateLogMessage(ILoggingEvent event) {
