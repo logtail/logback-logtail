@@ -309,17 +309,22 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         Map<String, Object> logRuntime = new HashMap<>();
         logRuntime.put("thread", event.getThreadName());
 
-        if (event.hasCallerData()) {
-            StackTraceElement[] callerData = event.getCallerData();
+        try {
+            if (event.hasCallerData()) {
+                StackTraceElement[] callerData = event.getCallerData();
 
-            if (callerData.length > 0) {
-                StackTraceElement callerContext = callerData[0];
+                if (callerData.length > 0) {
+                    StackTraceElement callerContext = callerData[0];
 
-                logRuntime.put("class", callerContext.getClassName());
-                logRuntime.put("method", callerContext.getMethodName());
-                logRuntime.put("file", callerContext.getFileName());
-                logRuntime.put("line", callerContext.getLineNumber());
+                    logRuntime.put("class", callerContext.getClassName());
+                    logRuntime.put("method", callerContext.getMethodName());
+                    logRuntime.put("file", callerContext.getFileName());
+                    logRuntime.put("line", callerContext.getLineNumber());
+                }
             }
+        } catch (RuntimeException e) {
+            // Caller data is optional and some ILoggingEvent implementations fail to compute it, e.g. the Quarkus
+            // logback bridge on a log record without a source class - the line is still worth sending without it
         }
 
         return logRuntime;
