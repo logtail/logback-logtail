@@ -1,0 +1,237 @@
+# Publishes logback-logtail to Maven Central from GitHub Actions, the way logtail-js and logtail-python
+# release from theirs. Maven Central has no trusted publishing, so the publish job runs in the
+# "maven-central" environment and reads real credentials from its secrets:
+#   MAVEN_CENTRAL_USERNAME, MAVEN_CENTRAL_PASSWORD  a Central Portal user token (central.sonatype.com/usertoken)
+#   GPG_PRIVATE_KEY, GPG_PASSPHRASE                  the ASCII-armored signing key and its passphrase
+# Keep required reviewers on that environment: approving the environment prompt is the release gate.
+#
+# Release: Actions → Release → Run workflow from main, pick patch or minor, approve the environment prompt.
+# The workflow bumps the version in pom.xml and the two example projects, builds, commits "vX.Y.Z", tags it,
+# pushes both, deploys the signed bundle to the Central Portal and waits until the Portal reports it
+# published, then creates a GitHub release with auto-generated notes for the tag; edit the notes afterwards
+# if needed. Propagation to repo1.maven.org and search.maven.org follows on its own and can take a few
+# hours. The dependency snippet in the docs article is updated by hand.
+#
+# Retry: if a release failed after the version commit was pushed, run "retry" right away from main. It bumps
+# nothing, rebuilds the tagged commit, deploys with the components the Portal already published left out of
+# the bundle, and creates the GitHub release if it is still missing. Running patch or minor again would
+# release the next version instead.
+#
+# Dry run: bumps in place without committing, uploads a real deployment with auto-publish OFF, waits for the
+# Portal to validate it (credentials, signatures, key on a keyserver, bundle contents) and drops it through
+# the Publisher API, so nothing is ever published. Every push that touches this file runs one, so a change to
+# the workflow proves itself on its branch before it reaches main; a dry run can also be dispatched from any
+# branch.
+name: Release
+
+on:
+  push:
+    paths:
+      - .github/workflows/release.yml
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "patch or minor: bump, tag and publish. retry: finish a release that failed halfway."
+        type: choice
+        options: [patch, minor, retry]
+        required: true
+      dry_run:
+        description: "Dry run: bump and build, let the Portal validate the deployment, publish nothing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # A push runs the dry run of a patch release; a dispatch does what its inputs say
+  RELEASE: ${{ inputs.release || 'patch' }}
+  DRY_RUN: ${{ github.event_name == 'push' || inputs.dry_run }}
+
+jobs:
+  verify:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 8
+          cache: maven
+
+      - name: Build with Maven
+        uses: nick-fields/retry@v4
+        with:
+          timeout_seconds: 300
+          max_attempts: 5
+          command: mvn -B clean package --file pom.xml
+        env:
+          BETTER_STACK_SOURCE_TOKEN: ${{ secrets.BETTER_STACK_SOURCE_TOKEN }}
+          BETTER_STACK_INGESTING_HOST: ${{ secrets.BETTER_STACK_INGESTING_HOST }}
+
+  build:
+    name: Bump and build
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # pushes the version commit and tag
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Releases run from main only
+        if: ${{ env.DRY_RUN != 'true' && github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::Dispatch the release from main, not from $GITHUB_REF_NAME."
+          exit 1
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the version check looks at the tags on HEAD
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Bump version
+        id: version
+        run: |
+          python3 - <<'EOF'
+          import os, re, subprocess
+
+          pom, example_pom, example_gradle = 'pom.xml', 'examples/maven/pom.xml', 'examples/gradle/build.gradle'
+          current = re.search(r'^    <version>(\d+\.\d+\.\d+)</version>$', open(pom).read(), re.M).group(1)
+          assert '<version>%s</version>' % current in open(example_pom).read(), 'examples/maven/pom.xml does not use the current version %s' % current
+          assert 'logback-logtail:%s' % current in open(example_gradle).read(), 'examples/gradle/build.gradle does not use the current version %s' % current
+          tagged = 'v' + current in subprocess.check_output(['git', 'tag', '--points-at', 'HEAD'], text=True).split()
+
+          release, dry_run = os.environ['RELEASE'], os.environ['DRY_RUN'] == 'true'
+          if release == 'retry':
+              assert tagged, 'retry only finishes a release whose version commit v%s is HEAD' % current
+              version = current
+          else:
+              assert dry_run or not tagged, 'HEAD is already released as v%s, there is nothing new to release' % current
+              major, minor, patch = map(int, current.split('.'))
+              version = '%d.%d.0' % (major, minor + 1) if release == 'minor' else '%d.%d.%d' % (major, minor, patch + 1)
+              for path, line in ((pom, '    <version>%s</version>'), (example_pom, '<version>%s</version>'), (example_gradle, 'logback-logtail:%s')):
+                  text = open(path).read()
+                  open(path, 'w').write(text.replace(line % current, line % version, 1))
+
+          print('%s -> %s' % (current, version))
+          open(os.environ['GITHUB_OUTPUT'], 'a').write('version=%s\n' % version)
+          EOF
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mvn -B clean verify -P release -Dmaven.test.skip=true -Dgpg.skip=true
+          ls target/logback-logtail-$VERSION.jar target/logback-logtail-$VERSION-sources.jar target/logback-logtail-$VERSION-javadoc.jar
+
+      - name: Commit and tag
+        if: ${{ env.DRY_RUN != 'true' && env.RELEASE != 'retry' }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "v$VERSION"
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin main "v$VERSION"
+
+  release:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    environment: maven-central
+    timeout-minutes: 60 # the Portal gets up to 30 minutes to publish
+    permissions:
+      contents: write # creates the GitHub release
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+      MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+      MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # A release deploys the version commit the build job tagged; a dry run deploys the commit it was run on
+          ref: ${{ env.DRY_RUN == 'true' && github.sha || format('refs/tags/v{0}', needs.build.outputs.version) }}
+
+      # Writes the Portal token into settings.xml under the "central" server id the pom uses and imports the
+      # signing key into a keyring of its own; the gpg plugin reads the passphrase from MAVEN_GPG_PASSPHRASE.
+      # Nothing is restored from the Actions cache in this job.
+      - name: Set up JDK, Maven Central credentials and the signing key
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          server-id: central
+          server-username-env-var: MAVEN_CENTRAL_USERNAME
+          server-password-env-var: MAVEN_CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase-env-var: MAVEN_GPG_PASSPHRASE
+
+      - name: Dry run - bump in place
+        if: ${{ env.DRY_RUN == 'true' }}
+        run: mvn -B -q org.codehaus.mojo:versions-maven-plugin:2.22.0:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false
+
+      - name: Dry run - let the Portal validate the deployment
+        if: ${{ env.DRY_RUN == 'true' }}
+        id: dry_run
+        run: |
+          # With auto-publish off the plugin stops once the Portal reports the deployment validated, which is
+          # every check short of publishing. The deployment id is kept so that the next step can drop it.
+          set +e
+          mvn -B clean deploy -P release -Dmaven.test.skip=true -DautoPublish=false -DdeploymentName="Dry run of $VERSION from $GITHUB_REF_NAME" | tee mvn.log
+          status=${PIPESTATUS[0]}
+          set -e
+          echo "id=$(grep -oE 'deploymentId: [0-9a-f-]{36}' mvn.log | head -1 | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Dry run - drop the deployment
+        if: ${{ always() && steps.dry_run.outputs.id != '' }}
+        env:
+          DEPLOYMENT_ID: ${{ steps.dry_run.outputs.id }}
+        run: |
+          curl --fail --silent --show-error --request DELETE \
+            --header "Authorization: Bearer $(printf '%s:%s' "$MAVEN_CENTRAL_USERNAME" "$MAVEN_CENTRAL_PASSWORD" | base64 --wrap=0)" \
+            "https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID"
+          echo "Dropped deployment $DEPLOYMENT_ID, nothing was published."
+
+      - name: Publish to Maven Central
+        if: ${{ env.DRY_RUN != 'true' }}
+        run: |
+          # The pom turns auto-publish on and waits until the Portal reports the deployment published. On a
+          # retry, components the Portal already published are left out of the bundle.
+          mvn -B clean deploy -P release -Dmaven.test.skip=true -DdeploymentName="logback-logtail $VERSION" -DignorePublishedComponents="${{ env.RELEASE == 'retry' }}"
+
+      - name: Create GitHub release
+        if: ${{ env.DRY_RUN != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "Release v$VERSION already exists."
+          else
+            # --verify-tag: only ever attach to the tag the build job pushed, never create one here.
+            gh release create "v$VERSION" --verify-tag --generate-notes
+          fi
+          echo "Published https://central.sonatype.com/artifact/com.logtail/logback-logtail/$VERSION"
+          echo "It reaches https://repo1.maven.org/maven2/com/logtail/logback-logtail/$VERSION/ on its own; update the docs article snippet by hand."
