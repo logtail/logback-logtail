@@ -4,14 +4,11 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 
 import java.util.List;
 import java.io.IOException;
-import java.util.concurrent.locks.ReentrantLock;
 
 public class LogtailAppenderDecorator extends LogtailAppender {
     private Exception exception;
     private LogtailResponse response;
     protected int apiCalls = 0;
-
-    private ReentrantLock flushLock = new ReentrantLock();
 
     @Override
     protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
@@ -24,13 +21,6 @@ public class LogtailAppenderDecorator extends LogtailAppender {
             this.exception = e;
             throw e;
         }
-    }
-
-    @Override
-    public void flush() {
-        flushLock.lock();
-        super.flush();
-        flushLock.unlock();
     }
 
     public void awaitFlushCompletion(){

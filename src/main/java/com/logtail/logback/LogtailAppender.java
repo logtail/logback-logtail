@@ -20,12 +20,12 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.Map.Entry;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
@@ -51,13 +51,14 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     // Non-customizable variables
     protected Vector<ILoggingEvent> batch = new Vector<>();
-    protected AtomicBoolean isFlushing = new AtomicBoolean(false);
+    protected ReentrantLock flushLock = new ReentrantLock();
     protected boolean mustReflush = false;
     protected boolean warnAboutMaxQueueSize = true;
 
     // Utils
     protected ScheduledExecutorService scheduledExecutorService;
     protected ScheduledFuture<?> scheduledFuture;
+    protected Thread shutdownHook;
     protected ObjectMapper dataMapper;
     protected Logger logger;
     protected int retrySize = 0;
@@ -114,7 +115,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         }
 
         if (batch.size() >= batchSize) {
-            if (isFlushing.get())
+            if (flushLock.isLocked())
                 return;
 
             startThread("logtail-appender-flush", new LogtailSender());
@@ -132,29 +133,30 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             return;
 
         // Guaranteed to not be running concurrently
-        if (isFlushing.getAndSet(true))
+        if (!flushLock.tryLock())
             return;
 
-        mustReflush = false;
+        try {
+            do {
+                mustReflush = false;
 
-        int flushedSize = batch.size();
-        if (flushedSize > batchSize) {
-            flushedSize = batchSize;
-            mustReflush = true;
+                int flushedSize = batch.size();
+                if (flushedSize > batchSize) {
+                    flushedSize = batchSize;
+                    mustReflush = true;
+                }
+                if (retries > 0 && flushedSize > retrySize) {
+                    flushedSize = retrySize;
+                    mustReflush = true;
+                }
+
+                if (!flushLogs(flushedSize)) {
+                    mustReflush = true;
+                }
+            } while (!batch.isEmpty() && (mustReflush || batch.size() >= batchSize));
+        } finally {
+            flushLock.unlock();
         }
-        if (retries > 0 && flushedSize > retrySize) {
-            flushedSize = retrySize;
-            mustReflush = true;
-        }
-
-        if (!flushLogs(flushedSize)) {
-            mustReflush = true;
-        }
-
-        isFlushing.set(false);
-
-        if (mustReflush || batch.size() >= batchSize)
-            flush();
     }
 
     protected boolean flushLogs(int flushedSize) {
@@ -366,9 +368,6 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
                 flush();
             } catch (Exception e) {
                 logger.error("Error trying to flush : {}", e.getMessage(), e);
-                if (isFlushing.get()) {
-                    isFlushing.set(false);
-                }
             }
         }
     }
@@ -547,10 +546,32 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     @Override
+    public void start() {
+        // The sender runs on a daemon thread, so a JVM exiting on its own would take the queued logs with it
+        shutdownHook = new Thread(this::stop, "logtail-appender-shutdown");
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
+        super.start();
+    }
+
+    @Override
     public void stop() {
+        if (!isStarted())
+            return;
+
+        try {
+            Runtime.getRuntime().removeShutdownHook(shutdownHook);
+        } catch (IllegalStateException e) {
+            // The JVM is already shutting down - stop() is running from the hook itself or from logback's
+        }
         scheduledExecutorService.shutdown();
-        mustReflush = true;
-        flush();
-        super.stop();
+
+        // Waits for a flush in progress on another thread, then sends everything still queued
+        flushLock.lock();
+        try {
+            super.stop();
+            flush();
+        } finally {
+            flushLock.unlock();
+        }
     }
 }
