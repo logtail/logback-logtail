@@ -191,6 +191,23 @@ jobs:
         if: ${{ env.DRY_RUN == 'true' }}
         run: mvn -B -q org.codehaus.mojo:versions-maven-plugin:2.22.0:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false
 
+      - name: Dry run - make sure auto-publish is off
+        if: ${{ env.DRY_RUN == 'true' }}
+        run: |
+          # A literal <autoPublish> in the plugin configuration would win over the flag and publish the dry run for
+          # real, so the effective pom has to show it off before anything is uploaded
+          mvn -B -q -P release help:effective-pom -Doutput=effective-pom.xml -DautoPublish=false
+          python3 - <<'EOF'
+          import sys, xml.etree.ElementTree as ET
+
+          ns = '{http://maven.apache.org/POM/4.0.0}'
+          plugins = [p for p in ET.parse('effective-pom.xml').getroot().iter(ns + 'plugin') if p.findtext(ns + 'artifactId') == 'central-publishing-maven-plugin']
+          values = [p.findtext(ns + 'configuration/' + ns + 'autoPublish') for p in plugins]
+          print('central-publishing-maven-plugin autoPublish in the effective pom:', values)
+          if not values or values != ['false'] * len(values):
+              sys.exit('::error::-DautoPublish=false is not effective, refusing to upload')
+          EOF
+
       - name: Dry run - let the Portal validate the deployment
         if: ${{ env.DRY_RUN == 'true' }}
         id: dry_run
