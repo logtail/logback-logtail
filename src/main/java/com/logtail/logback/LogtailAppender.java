@@ -102,6 +102,10 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             return;
         }
 
+        // The batch is serialized later on another thread: take the formatted message, the thread name and the
+        // MDC from the logging thread now, as logback's own AsyncAppender does
+        event.prepareForDeferredProcessing();
+
         if (batch.size() < maxQueueSize) {
             batch.add(event);
         }
