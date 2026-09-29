@@ -46,6 +46,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected int readTimeout = 10000;
     protected int maxRetries = 5;
     protected int retrySleepMilliseconds = 300;
+    protected int maxFlushTime = 10000;
 
     protected PatternLayoutEncoder encoder;
 
@@ -59,6 +60,8 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected ScheduledExecutorService scheduledExecutorService;
     protected ScheduledFuture<?> scheduledFuture;
     protected Thread shutdownHook;
+    // Deadline (System.nanoTime()) of the flush that stop() or the shutdown hook runs on this thread
+    protected final ThreadLocal<Long> flushDeadline = new ThreadLocal<>();
     protected ObjectMapper dataMapper;
     protected Logger logger;
     protected int retrySize = 0;
@@ -122,7 +125,10 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             if (flushLock.isLocked())
                 return;
 
-            startThread("logtail-appender-flush", new LogtailSender());
+            // A daemon thread like the scheduled sender: at exit, the shutdown hook sends what it leaves behind
+            Thread flushThread = threadFactory.newThread(new LogtailSender());
+            flushThread.setName("logtail-appender-flush");
+            flushThread.start();
         }
     }
 
@@ -142,6 +148,16 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
         try {
             do {
+                if (millisLeftToFlush() <= 0) {
+                    int dropped;
+                    synchronized (batch) {
+                        dropped = batch.size();
+                        batch.clear();
+                    }
+                    logger.error("Dropped {} logs that could not be sent within maxFlushTime ({} ms).", dropped, maxFlushTime);
+                    retries = 0;
+                    return;
+                }
                 mustReflush = false;
 
                 int flushedSize = batch.size();
@@ -181,7 +197,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             if (retries > 0) {
                 logger.info("Retrying to send {} logs to Better Stack ({} / {})", flushedSize, retries, maxRetries);
                 try {
-                    TimeUnit.MILLISECONDS.sleep(retrySleepMilliseconds);
+                    TimeUnit.MILLISECONDS.sleep(Math.min(retrySleepMilliseconds, millisLeftToFlush()));
                 } catch (InterruptedException e) {
                     // Continue
                 }
@@ -251,8 +267,10 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         httpURLConnection.setRequestProperty("Charset", "UTF-8");
         httpURLConnection.setRequestProperty("Authorization", String.format("Bearer %s", this.sourceToken));
         httpURLConnection.setRequestMethod("POST");
-        httpURLConnection.setConnectTimeout(this.connectTimeout);
-        httpURLConnection.setReadTimeout(this.readTimeout);
+        // Within stop() or the shutdown hook, no request may outlast maxFlushTime
+        long millisLeft = Math.max(1, millisLeftToFlush());
+        httpURLConnection.setConnectTimeout((int) Math.min(this.connectTimeout, millisLeft));
+        httpURLConnection.setReadTimeout((int) Math.min(this.readTimeout, millisLeft));
         return httpURLConnection;
     }
 
@@ -526,6 +544,17 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
+     * Sets the maximum time stop() and the JVM shutdown hook wait for queued logs to be sent, in milliseconds. Logs
+     * that could not be sent by then are dropped, so an endpoint that cannot be reached does not hold the shutdown.
+     *
+     * @param maxFlushTime
+     *            maximum time to send queued logs when stopping [ms]
+     */
+    public void setMaxFlushTime(int maxFlushTime) {
+        this.maxFlushTime = maxFlushTime;
+    }
+
+    /**
      * Registers a dynamically loaded Module object to ObjectMapper used for serialization of logged data.
      *
      * @param className
@@ -571,25 +600,40 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         }
         scheduledExecutorService.shutdown();
 
-        // Waits for a flush in progress on another thread, then sends everything still queued
-        flushLock.lock();
+        // Like logback's own AsyncAppender: stop taking events, then send what is queued within maxFlushTime
+        super.stop();
+        flushQueue();
+    }
+
+    /**
+     * Waits for a flush in progress on another thread, then sends everything still queued - giving up once
+     * maxFlushTime has passed, so an endpoint that cannot be reached does not hold the application's shutdown.
+     */
+    protected void flushQueue() {
+        flushDeadline.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(maxFlushTime));
         try {
-            super.stop();
-            flush();
+            if (!flushLock.tryLock(maxFlushTime, TimeUnit.MILLISECONDS)) {
+                logger.error("Gave up waiting for a flush in progress after maxFlushTime ({} ms), {} logs not sent.", maxFlushTime, batch.size());
+                return;
+            }
+            try {
+                flush();
+            } finally {
+                flushLock.unlock();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         } finally {
-            flushLock.unlock();
+            flushDeadline.remove();
         }
     }
 
     /**
-     * Waits for a flush in progress on another thread, then sends everything still queued.
+     * Milliseconds left until the flush that stop() or the shutdown hook runs on this thread gives up, Long.MAX_VALUE
+     * for any other flush.
      */
-    protected void flushQueue() {
-        flushLock.lock();
-        try {
-            flush();
-        } finally {
-            flushLock.unlock();
-        }
+    protected long millisLeftToFlush() {
+        Long deadline = flushDeadline.get();
+        return deadline == null ? Long.MAX_VALUE : TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
     }
 }
