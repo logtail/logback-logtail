@@ -497,12 +497,18 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Sets the maximum wait time for a batch to be sent via the API, in milliseconds.
+     * Sets the maximum wait time for a batch to be sent via the API, in milliseconds. A value below 1 is ignored with a
+     * warning and the current interval is kept.
      *
      * @param batchInterval
-     *            maximum wait time for message batch [ms]
+     *            maximum wait time for message batch [ms], 1 or more
      */
     public void setBatchInterval(int batchInterval) {
+        // scheduleWithFixedDelay() throws on it, which would fail start() or leave a running sender cancelled
+        if (batchInterval <= 0) {
+            addWarn("batchInterval must be positive, keeping " + this.batchInterval + " ms instead of " + batchInterval);
+            return;
+        }
         this.batchInterval = batchInterval;
 
         // Before start(), which schedules the sender with this interval, there is no sender to reschedule
@@ -555,12 +561,18 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     /**
      * Sets the maximum time stop() and the JVM shutdown hook wait for queued logs to be sent, in milliseconds. Logs
      * that could not be sent by then are dropped, so an endpoint that cannot be reached does not hold the shutdown.
-     * 0 means no limit, as for logback's own AsyncAppender.
+     * 0 means no limit, as for logback's own AsyncAppender. A negative value is ignored with a warning and the current
+     * time is kept.
      *
      * @param maxFlushTime
      *            maximum time to send queued logs when stopping [ms], 0 for no limit
      */
     public void setMaxFlushTime(int maxFlushTime) {
+        // Thread.join() throws on it: stop() would fail and the JVM would exit without waiting for the queue to be sent
+        if (maxFlushTime < 0) {
+            addWarn("maxFlushTime must be 0 (no limit) or more, keeping " + this.maxFlushTime + " ms instead of " + maxFlushTime);
+            return;
+        }
         this.maxFlushTime = maxFlushTime;
     }
 
