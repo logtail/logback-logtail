@@ -470,22 +470,34 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Sets the maximum number of messages in the queue. Messages over the limit will be dropped.
+     * Sets the maximum number of messages in the queue. Messages over the limit will be dropped. A value below 1 is
+     * ignored with a warning and the current size is kept.
      *
      * @param maxQueueSize
-     *            max size of the message queue
+     *            max size of the message queue, 1 or more
      */
     public void setMaxQueueSize(int maxQueueSize) {
+        // No log would ever be queued, so none would be sent
+        if (maxQueueSize <= 0) {
+            addWarn("maxQueueSize must be positive, keeping " + this.maxQueueSize + " instead of " + maxQueueSize);
+            return;
+        }
         this.maxQueueSize = maxQueueSize;
     }
 
     /**
-     * Sets the batch size for the number of messages to be sent via the API
+     * Sets the batch size for the number of messages to be sent via the API. A value below 1 is ignored with a warning
+     * and the current size is kept.
      *
      * @param batchSize
-     *            size of the message batch
+     *            size of the message batch, 1 or more
      */
     public void setBatchSize(int batchSize) {
+        // flush() would loop without end, sending empty batches or failing on every one, and never send the queued logs
+        if (batchSize <= 0) {
+            addWarn("batchSize must be positive, keeping " + this.batchSize + " instead of " + batchSize);
+            return;
+        }
         this.batchSize = batchSize;
     }
 
@@ -519,32 +531,50 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Sets the connection timeout of the underlying HTTP client, in milliseconds.
+     * Sets the connection timeout of the underlying HTTP client, in milliseconds. 0 means no timeout. A negative value
+     * is ignored with a warning and the current timeout is kept.
      *
      * @param connectTimeout
-     *            client connection timeout [ms]
+     *            client connection timeout [ms], 0 for no timeout
      */
     public void setConnectTimeout(int connectTimeout) {
+        // HttpURLConnection throws on it: every request would fail and every batch be dropped after its retries
+        if (connectTimeout < 0) {
+            addWarn("connectTimeout must be 0 (no timeout) or more, keeping " + this.connectTimeout + " ms instead of " + connectTimeout);
+            return;
+        }
         this.connectTimeout = connectTimeout;
     }
 
     /**
-     * Sets the read timeout of the underlying HTTP client, in milliseconds.
+     * Sets the read timeout of the underlying HTTP client, in milliseconds. 0 means no timeout. A negative value is
+     * ignored with a warning and the current timeout is kept.
      *
      * @param readTimeout
-     *            client read timeout
+     *            client read timeout [ms], 0 for no timeout
      */
     public void setReadTimeout(int readTimeout) {
+        // HttpURLConnection throws on it: every request would fail and every batch be dropped after its retries
+        if (readTimeout < 0) {
+            addWarn("readTimeout must be 0 (no timeout) or more, keeping " + this.readTimeout + " ms instead of " + readTimeout);
+            return;
+        }
         this.readTimeout = readTimeout;
     }
 
     /**
      * Sets the maximum number of retries for sending logs to Better Stack. After that, current batch of logs will be dropped.
+     * 0 means no retries. A negative value is ignored with a warning and the current number is kept.
      *
      * @param maxRetries
-     *            max number of retries for sending logs
+     *            max number of retries for sending logs, 0 or more
      */
     public void setMaxRetries(int maxRetries) {
+        // Every batch would be dropped before its first attempt
+        if (maxRetries < 0) {
+            addWarn("maxRetries must be 0 (no retries) or more, keeping " + this.maxRetries + " instead of " + maxRetries);
+            return;
+        }
         this.maxRetries = maxRetries;
     }
 
