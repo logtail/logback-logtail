@@ -12,6 +12,7 @@ import org.junit.Test;
 import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -29,12 +30,27 @@ import static org.junit.Assert.fail;
 
 /**
  * Logs queued in the appender must reach Better Stack even when the application never stops logback and
- * simply lets the JVM exit, and stop() must not return while a flush is still in progress on another thread.
+ * simply lets the JVM exit, logs written while a framework shuts down must still be sent when it stops logback,
+ * and stop() must not return while a flush is still in progress on another thread.
  */
 public class LogtailAppenderJvmExitTest {
 
     @Test
     public void testQueuedLogsAreSentWhenTheJvmExitsWithoutStoppingLogback() throws Exception {
+        assertEquals(Collections.singletonList(Collections.singletonList("Logged right before the JVM exits")),
+                messagesSentByApp(ExitingApp.class));
+    }
+
+    @Test
+    public void testLogsWrittenWhileAFrameworkShutsDownAreSentWhenItStopsLogback() throws Exception {
+        assertEquals(Arrays.asList("Logged right before the JVM exits", "Logged while the framework shuts down"),
+                messagesSentByApp(FrameworkApp.class).stream().flatMap(List::stream).collect(Collectors.toList()));
+    }
+
+    /**
+     * Runs the app in a JVM of its own against a local endpoint and returns the messages of each request it sent.
+     */
+    private List<List<Object>> messagesSentByApp(Class<?> appClass) throws Exception {
         List<String> receivedBodies = new CopyOnWriteArrayList<>();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
@@ -47,7 +63,7 @@ public class LogtailAppenderJvmExitTest {
             Process app = new ProcessBuilder(
                     System.getProperty("java.home") + File.separator + "bin" + File.separator + "java",
                     "-cp", System.getProperty("java.class.path"),
-                    ExitingApp.class.getName(),
+                    appClass.getName(),
                     "http://127.0.0.1:" + server.getAddress().getPort())
                     .inheritIO()
                     .start();
@@ -60,10 +76,12 @@ public class LogtailAppenderJvmExitTest {
             server.stop(0);
         }
 
-        assertEquals(1, receivedBodies.size());
-        List<Map<String, Object>> lines = new ObjectMapper().readValue(receivedBodies.get(0), new TypeReference<List<Map<String, Object>>>() {});
-        assertEquals(Collections.singletonList("Logged right before the JVM exits"),
-                lines.stream().map(line -> line.get("message")).collect(Collectors.toList()));
+        List<List<Object>> messages = new ArrayList<>();
+        for (String body : receivedBodies) {
+            List<Map<String, Object>> lines = new ObjectMapper().readValue(body, new TypeReference<List<Map<String, Object>>>() {});
+            messages.add(lines.stream().map(line -> line.get("message")).collect(Collectors.toList()));
+        }
+        return messages;
     }
 
     /**
@@ -81,6 +99,36 @@ public class LogtailAppenderJvmExitTest {
 
             Logger logger = context.getLogger("ExitingApp");
             logger.addAppender(appender);
+            logger.info("Logged right before the JVM exits");
+        }
+    }
+
+    /**
+     * Run in a JVM of its own: like Spring Boot or Quarkus, its shutdown hook keeps logging while it shuts down and
+     * stops logback at the very end.
+     */
+    public static class FrameworkApp {
+        public static void main(String[] args) {
+            LoggerContext context = new LoggerContext();
+            LogtailAppender appender = new LogtailAppender();
+            appender.setContext(context);
+            appender.setAppName("FrameworkApp");
+            appender.setSourceToken("source-token");
+            appender.setIngestUrl(args[0]);
+            appender.start();
+
+            Logger logger = context.getLogger("FrameworkApp");
+            logger.addAppender(appender);
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                try {
+                    // All shutdown hooks start together - by now the appender's own hook has done its part
+                    Thread.sleep(300);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                logger.info("Logged while the framework shuts down");
+                context.stop();
+            }));
             logger.info("Logged right before the JVM exits");
         }
     }

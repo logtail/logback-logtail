@@ -558,8 +558,10 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     @Override
     public void start() {
-        // The sender runs on a daemon thread, so a JVM exiting on its own would take the queued logs with it
-        shutdownHook = new Thread(this::stop, "logtail-appender-shutdown");
+        // The sender runs on a daemon thread, so a JVM exiting on its own would take the queued logs with it. The hook
+        // only sends the queue and leaves the appender running: all shutdown hooks run at once, and frameworks such as
+        // Spring Boot and Quarkus keep logging while they shut down and stop logback themselves at the very end
+        shutdownHook = new Thread(this::flushQueue, "logtail-appender-shutdown");
         Runtime.getRuntime().addShutdownHook(shutdownHook);
         super.start();
     }
@@ -572,7 +574,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         try {
             Runtime.getRuntime().removeShutdownHook(shutdownHook);
         } catch (IllegalStateException e) {
-            // The JVM is already shutting down - stop() is running from the hook itself or from logback's
+            // The JVM is already shutting down - stop() is running from logback's or a framework's shutdown hook
         }
         scheduledExecutorService.shutdown();
 
@@ -580,6 +582,18 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         flushLock.lock();
         try {
             super.stop();
+            flush();
+        } finally {
+            flushLock.unlock();
+        }
+    }
+
+    /**
+     * Waits for a flush in progress on another thread, then sends everything still queued.
+     */
+    protected void flushQueue() {
+        flushLock.lock();
+        try {
             flush();
         } finally {
             flushLock.unlock();
