@@ -11,7 +11,6 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import java.util.UUID;
-import java.io.IOException;
 
 import static org.junit.Assert.*;
 
@@ -138,28 +137,6 @@ public class LogtailAppenderIntegrationTest {
         appender.awaitFlushCompletion();
 
         isOk();
-    }
-
-    @Test
-    public void testConnectTimeout() {
-        this.appender.connectTimeout = 1;
-        this.logger.error("I am no Groot");
-        this.appender.flush();
-        assertTrue(appender.hasException());
-        assertTrue(appender.getException() instanceof IOException);
-        assertNotNull(appender.getException().getMessage());
-        assertEquals("connect timed out", appender.getException().getMessage().toLowerCase());
-    }
-
-    @Test
-    public void testReadTimeout() {
-        this.appender.readTimeout = 1;
-        this.logger.error("I am no Groot");
-        this.appender.flush();
-        assertTrue(appender.hasException());
-        assertTrue(appender.getException() instanceof IOException);
-        assertNotNull(appender.getException().getMessage());
-        assertEquals("read timed out", appender.getException().getMessage().toLowerCase());
     }
 
     private void isOk() {

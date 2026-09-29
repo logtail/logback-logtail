@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -46,6 +47,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected int readTimeout = 10000;
     protected int maxRetries = 5;
     protected int retrySleepMilliseconds = 300;
+    protected int maxFlushTime = 30000;
 
     protected PatternLayoutEncoder encoder;
 
@@ -59,6 +61,8 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected ScheduledExecutorService scheduledExecutorService;
     protected ScheduledFuture<?> scheduledFuture;
     protected Thread shutdownHook;
+    // Set on the thread whose flush stop() or the shutdown hook wait for: when they give up (System.nanoTime())
+    protected final ThreadLocal<Long> flushDeadline = new ThreadLocal<>();
     protected ObjectMapper dataMapper;
     protected Logger logger;
     protected int retrySize = 0;
@@ -80,9 +84,6 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
                 .setPropertyNamingStrategy(PropertyNamingStrategies.UPPER_CAMEL_CASE)
                 .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
                 .registerModule(new BestEffortSerialization());
-
-        scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(threadFactory);
-        scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -105,6 +106,9 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         // The batch is serialized later on another thread: take the formatted message, the thread name and the
         // MDC from the logging thread now, as logback's own AsyncAppender does
         event.prepareForDeferredProcessing();
+        // Not every event takes the MDC there: the Quarkus logback bridge leaves prepareForDeferredProcessing() empty
+        // and its JBoss LogManager records copy the MDC on first access, from whichever thread that happens on
+        event.getMDCPropertyMap();
 
         if (batch.size() < maxQueueSize) {
             batch.add(event);
@@ -122,7 +126,10 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             if (flushLock.isLocked())
                 return;
 
-            startThread("logtail-appender-flush", new LogtailSender());
+            // A daemon thread like the scheduled sender: at exit, the shutdown hook sends what it leaves behind
+            Thread flushThread = threadFactory.newThread(new LogtailSender());
+            flushThread.setName("logtail-appender-flush");
+            flushThread.start();
         }
     }
 
@@ -142,6 +149,17 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
         try {
             do {
+                Long deadline = flushDeadline.get();
+                if (deadline != null && System.nanoTime() - deadline >= 0) {
+                    int dropped;
+                    synchronized (batch) {
+                        dropped = batch.size();
+                        batch.clear();
+                    }
+                    logger.error("Dropped {} logs that could not be sent within maxFlushTime ({} ms).", dropped, maxFlushTime);
+                    retries = 0;
+                    return;
+                }
                 mustReflush = false;
 
                 int flushedSize = batch.size();
@@ -222,23 +240,29 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
+        byte[] input = batchToJson(flushedSize).getBytes(StandardCharsets.UTF_8);
         HttpURLConnection connection = getHttpURLConnection();
 
-        try {
-            connection.connect();
-        } catch (Exception e) {
-            logger.error("Error trying to call Better Stack : {}", e.getMessage(), e);
-        }
-
         try (OutputStream os = connection.getOutputStream()) {
-            byte[] input = batchToJson(flushedSize).getBytes(StandardCharsets.UTF_8);
             os.write(input, 0, input.length);
-            os.flush();
+        }
+        LogtailResponse response = new LogtailResponse(connection.getResponseMessage(), connection.getResponseCode());
+
+        // Reading the response to its end hands the connection back to HttpURLConnection's keep-alive cache, so the
+        // next batch skips the TCP and TLS handshake
+        try (InputStream responseBody = response.getStatus() < 400 ? connection.getInputStream() : connection.getErrorStream()) {
+            if (responseBody != null) {
+                byte[] buffer = new byte[1024];
+                while (responseBody.read(buffer) != -1) {
+                    // Discarded
+                }
+            }
+        } catch (IOException e) {
+            // The endpoint has answered the batch already, only the connection cannot be kept for the next one
+            connection.disconnect();
         }
 
-        connection.disconnect();
-
-        return new LogtailResponse(connection.getResponseMessage(), connection.getResponseCode());
+        return response;
     }
 
     protected HttpURLConnection getHttpURLConnection() throws IOException {
@@ -414,7 +438,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
      *            your Better Stack source token
      */
     public void setIngestKey(String ingestKey) {
-        if (this.sourceToken == null) {
+        if (this.sourceToken != null) {
             return;
         }
         this.sourceToken = ingestKey;
@@ -479,10 +503,13 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
      *            maximum wait time for message batch [ms]
      */
     public void setBatchInterval(int batchInterval) {
-        scheduledFuture.cancel(false);
-        scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
-
         this.batchInterval = batchInterval;
+
+        // Before start(), which schedules the sender with this interval, there is no sender to reschedule
+        if (isStarted()) {
+            scheduledFuture.cancel(false);
+            scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
+        }
     }
 
     /**
@@ -526,6 +553,18 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
+     * Sets the maximum time stop() and the JVM shutdown hook wait for queued logs to be sent, in milliseconds. Logs
+     * that could not be sent by then are dropped, so an endpoint that cannot be reached does not hold the shutdown.
+     * 0 means no limit, as for logback's own AsyncAppender.
+     *
+     * @param maxFlushTime
+     *            maximum time to send queued logs when stopping [ms], 0 for no limit
+     */
+    public void setMaxFlushTime(int maxFlushTime) {
+        this.maxFlushTime = maxFlushTime;
+    }
+
+    /**
      * Registers a dynamically loaded Module object to ObjectMapper used for serialization of logged data.
      *
      * @param className
@@ -551,9 +590,17 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     @Override
     public void start() {
-        // The sender runs on a daemon thread, so a JVM exiting on its own would take the queued logs with it
-        shutdownHook = new Thread(this::stop, "logtail-appender-shutdown");
+        if (isStarted())
+            return;
+
+        // The sender runs on a daemon thread, so a JVM exiting on its own would take the queued logs with it. The hook
+        // only sends the queue and leaves the appender running: all shutdown hooks run at once, and frameworks such as
+        // Spring Boot and Quarkus keep logging while they shut down and stop logback themselves at the very end
+        shutdownHook = new Thread(this::flushQueue, "logtail-appender-shutdown");
         Runtime.getRuntime().addShutdownHook(shutdownHook);
+
+        scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(threadFactory);
+        scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
         super.start();
     }
 
@@ -565,17 +612,46 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         try {
             Runtime.getRuntime().removeShutdownHook(shutdownHook);
         } catch (IllegalStateException e) {
-            // The JVM is already shutting down - stop() is running from the hook itself or from logback's
+            // The JVM is already shutting down - stop() is running from logback's or a framework's shutdown hook
         }
         scheduledExecutorService.shutdown();
 
-        // Waits for a flush in progress on another thread, then sends everything still queued
-        flushLock.lock();
+        // Like logback's own AsyncAppender: stop taking events, then send what is queued within maxFlushTime
+        super.stop();
+        flushQueue();
+    }
+
+    /**
+     * Sends everything still queued, after a flush in progress on another thread, and waits for that for at most
+     * maxFlushTime. The sending is left to a daemon thread, as in logback's own AsyncAppender, so whatever holds it
+     * cannot hold the application's shutdown for longer: an endpoint that cannot be reached, a name server that does
+     * not answer, a connection that stopped taking data.
+     */
+    protected void flushQueue() {
+        Thread flushThread = threadFactory.newThread(() -> {
+            // 0 means no limit, here as well as for Thread.join() below
+            if (maxFlushTime > 0)
+                flushDeadline.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(maxFlushTime));
+            flushLock.lock();
+            try {
+                flush();
+            } finally {
+                flushLock.unlock();
+            }
+        });
+        flushThread.setName("logtail-appender-flush");
+        flushThread.start();
+
+        // An interrupt from before must not skip the wait, it is put back for the caller in the end
+        boolean interrupted = Thread.interrupted();
         try {
-            super.stop();
-            flush();
-        } finally {
-            flushLock.unlock();
+            flushThread.join(maxFlushTime);
+        } catch (InterruptedException e) {
+            interrupted = true;
         }
+        if (flushThread.isAlive())
+            logger.error("Gave up waiting for {} queued logs to be sent (maxFlushTime {} ms).", batch.size(), maxFlushTime);
+        if (interrupted)
+            Thread.currentThread().interrupt();
     }
 }

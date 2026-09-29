@@ -60,10 +60,13 @@ public class LogtailAppenderBatchConfigSizeTest {
         MDC.put("requestId", "testErrorLog");
         MDC.put("requestTime", 199 + "");
         this.logger.info(batchRunId + " Custom batch size Final Batch Groot ");
-        Thread.sleep(4000);
-        assertEquals(1, this.appender.apiCalls);
+
+        // The 200th line sends the batch on another thread. Wait for that flush instead of a fixed time: a request to
+        // the real endpoint now and then takes several seconds, or fails and is retried by the appender
+        this.appender.awaitFlushCompletion();
 
         isOk();
+        assertEquals(1, this.appender.acceptedCalls);
     }
 
     private void isOk() {
