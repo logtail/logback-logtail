@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <appender name="Logtail" class="com.logtail.logback.LogtailAppender">
+        <sourceToken>source-token</sourceToken>
+        <ingestUrl>${SILENT_ENDPOINT}</ingestUrl>
+        <batchSize>${BATCH_SIZE}</batchSize>
+        <batchInterval>60000</batchInterval>
+        <maxFlushTime>1000</maxFlushTime>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="Logtail" />
+    </root>
+
+</configuration>
