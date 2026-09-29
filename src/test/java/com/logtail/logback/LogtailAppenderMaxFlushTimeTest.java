@@ -1,13 +1,20 @@
 package com.logtail.logback;
 
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
+import ch.qos.logback.classic.spi.LoggingEvent;
 import ch.qos.logback.core.joran.spi.JoranException;
 import org.junit.Test;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.ServerSocket;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
@@ -17,7 +24,8 @@ import static org.junit.Assert.fail;
 
 /**
  * stop() and the JVM shutdown hook send what is queued, but an endpoint that never answers must not hold the
- * application's shutdown for longer than maxFlushTime (1 second in logback-max-flush-time.xml).
+ * application's shutdown for longer than maxFlushTime (1 second in logback-max-flush-time.xml) - unless it is 0,
+ * which means no limit, as for logback's own AsyncAppender.
  */
 public class LogtailAppenderMaxFlushTimeTest {
 
@@ -57,6 +65,51 @@ public class LogtailAppenderMaxFlushTimeTest {
                 fail("The app did not exit within maxFlushTime");
             }
             assertEquals(0, app.exitValue());
+        }
+    }
+
+    @Test
+    public void testZeroMaxFlushTimeWaitsForAFlushInProgressAsLongAsItTakes() throws Exception {
+        CountDownLatch requestStarted = new CountDownLatch(1);
+        CountDownLatch requestMayComplete = new CountDownLatch(1);
+        List<Integer> sentBatchSizes = new CopyOnWriteArrayList<>();
+        LogtailAppender appender = new LogtailAppender() {
+            @Override
+            protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
+                requestStarted.countDown();
+                try {
+                    requestMayComplete.await();
+                } catch (InterruptedException e) {
+                    throw new IOException(e);
+                }
+                sentBatchSizes.add(flushedSize);
+                return new LogtailResponse(null, 202);
+            }
+        };
+        appender.setContext(new LoggerContext());
+        appender.setSourceToken("source-token");
+        appender.setBatchSize(2);
+        appender.setMaxFlushTime(0);
+        appender.start();
+        Logger logger = new LoggerContext().getLogger(Logger.ROOT_LOGGER_NAME);
+
+        try {
+            appender.doAppend(new LoggingEvent(Logger.FQCN, logger, Level.INFO, "First", null, new Object[]{}));
+            appender.doAppend(new LoggingEvent(Logger.FQCN, logger, Level.INFO, "Second", null, new Object[]{}));
+            assertTrue("A full batch starts a flush", requestStarted.await(5, TimeUnit.SECONDS));
+            appender.doAppend(new LoggingEvent(Logger.FQCN, logger, Level.INFO, "Third", null, new Object[]{}));
+
+            Thread stopping = new Thread(appender::stop);
+            stopping.start();
+            stopping.join(1500);
+            assertTrue("stop() must keep waiting for the flush in progress", stopping.isAlive());
+
+            requestMayComplete.countDown();
+            stopping.join(5000);
+            assertFalse(stopping.isAlive());
+            assertEquals(Arrays.asList(2, 1), sentBatchSizes);
+        } finally {
+            requestMayComplete.countDown();
         }
     }
 

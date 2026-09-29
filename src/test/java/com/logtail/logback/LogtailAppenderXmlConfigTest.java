@@ -52,6 +52,7 @@ public class LogtailAppenderXmlConfigTest {
 
         assertEquals(5000, appender.connectTimeout);
         assertEquals(10000, appender.readTimeout);
+        assertEquals(30000, appender.maxFlushTime);
         
         rootLogger.info("I am Groot");
     }
