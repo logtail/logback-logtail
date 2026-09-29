@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -222,23 +223,26 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
+        byte[] input = batchToJson(flushedSize).getBytes(StandardCharsets.UTF_8);
         HttpURLConnection connection = getHttpURLConnection();
 
-        try {
-            connection.connect();
-        } catch (Exception e) {
-            logger.error("Error trying to call Better Stack : {}", e.getMessage(), e);
-        }
-
         try (OutputStream os = connection.getOutputStream()) {
-            byte[] input = batchToJson(flushedSize).getBytes(StandardCharsets.UTF_8);
             os.write(input, 0, input.length);
-            os.flush();
+        }
+        LogtailResponse response = new LogtailResponse(connection.getResponseMessage(), connection.getResponseCode());
+
+        // Reading the response to its end hands the connection back to HttpURLConnection's keep-alive cache for the
+        // next batch - disconnect() would close it, and every batch would pay for a new TCP and TLS handshake
+        try (InputStream responseBody = response.getStatus() < 400 ? connection.getInputStream() : connection.getErrorStream()) {
+            if (responseBody != null) {
+                byte[] buffer = new byte[1024];
+                while (responseBody.read(buffer) != -1) {
+                    // Discarded
+                }
+            }
         }
 
-        connection.disconnect();
-
-        return new LogtailResponse(connection.getResponseMessage(), connection.getResponseCode());
+        return response;
     }
 
     protected HttpURLConnection getHttpURLConnection() throws IOException {
