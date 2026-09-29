@@ -414,7 +414,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
      *            your Better Stack source token
      */
     public void setIngestKey(String ingestKey) {
-        if (this.sourceToken == null) {
+        if (this.sourceToken != null) {
             return;
         }
         this.sourceToken = ingestKey;
