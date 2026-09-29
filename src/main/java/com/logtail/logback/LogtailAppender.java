@@ -648,16 +648,4 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         if (interrupted)
             Thread.currentThread().interrupt();
     }
-
-    /**
-     * Waits for a flush in progress on another thread, then sends everything still queued.
-     */
-    protected void flushQueue() {
-        flushLock.lock();
-        try {
-            flush();
-        } finally {
-            flushLock.unlock();
-        }
-    }
 }
