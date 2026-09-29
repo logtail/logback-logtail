@@ -46,7 +46,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected int readTimeout = 10000;
     protected int maxRetries = 5;
     protected int retrySleepMilliseconds = 300;
-    protected int maxFlushTime = 10000;
+    protected int maxFlushTime = 30000;
 
     protected PatternLayoutEncoder encoder;
 
@@ -546,9 +546,10 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     /**
      * Sets the maximum time stop() and the JVM shutdown hook wait for queued logs to be sent, in milliseconds. Logs
      * that could not be sent by then are dropped, so an endpoint that cannot be reached does not hold the shutdown.
+     * 0 means no limit, as for logback's own AsyncAppender.
      *
      * @param maxFlushTime
-     *            maximum time to send queued logs when stopping [ms]
+     *            maximum time to send queued logs when stopping [ms], 0 for no limit
      */
     public void setMaxFlushTime(int maxFlushTime) {
         this.maxFlushTime = maxFlushTime;
@@ -610,9 +611,11 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
      * maxFlushTime has passed, so an endpoint that cannot be reached does not hold the application's shutdown.
      */
     protected void flushQueue() {
-        flushDeadline.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(maxFlushTime));
+        // 0 means no limit, as for logback's own AsyncAppender, which hands maxFlushTime to Thread.join()
+        if (maxFlushTime > 0)
+            flushDeadline.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(maxFlushTime));
         try {
-            if (!flushLock.tryLock(maxFlushTime, TimeUnit.MILLISECONDS)) {
+            if (!flushLock.tryLock(millisLeftToFlush(), TimeUnit.MILLISECONDS)) {
                 logger.error("Gave up waiting for a flush in progress after maxFlushTime ({} ms), {} logs not sent.", maxFlushTime, batch.size());
                 return;
             }
