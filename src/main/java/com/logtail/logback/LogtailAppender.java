@@ -84,9 +84,6 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
                 .setPropertyNamingStrategy(PropertyNamingStrategies.UPPER_CAMEL_CASE)
                 .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
                 .registerModule(new BestEffortSerialization());
-
-        scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(threadFactory);
-        scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -506,10 +503,13 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
      *            maximum wait time for message batch [ms]
      */
     public void setBatchInterval(int batchInterval) {
-        scheduledFuture.cancel(false);
-        scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
-
         this.batchInterval = batchInterval;
+
+        // Before start(), which schedules the sender with this interval, there is no sender to reschedule
+        if (isStarted()) {
+            scheduledFuture.cancel(false);
+            scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
+        }
     }
 
     /**
@@ -590,11 +590,17 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
     @Override
     public void start() {
+        if (isStarted())
+            return;
+
         // The sender runs on a daemon thread, so a JVM exiting on its own would take the queued logs with it. The hook
         // only sends the queue and leaves the appender running: all shutdown hooks run at once, and frameworks such as
         // Spring Boot and Quarkus keep logging while they shut down and stop logback themselves at the very end
         shutdownHook = new Thread(this::flushQueue, "logtail-appender-shutdown");
         Runtime.getRuntime().addShutdownHook(shutdownHook);
+
+        scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(threadFactory);
+        scheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(new LogtailSender(), batchInterval, batchInterval, TimeUnit.MILLISECONDS);
         super.start();
     }
 
