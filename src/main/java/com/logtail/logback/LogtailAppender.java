@@ -470,22 +470,34 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Sets the maximum number of messages in the queue. Messages over the limit will be dropped.
+     * Sets the maximum number of messages in the queue. Messages over the limit will be dropped. A value below 1 is
+     * ignored with a warning and the current size is kept.
      *
      * @param maxQueueSize
-     *            max size of the message queue
+     *            max size of the message queue, 1 or more
      */
     public void setMaxQueueSize(int maxQueueSize) {
+        // No log would ever be queued, so none would be sent
+        if (maxQueueSize <= 0) {
+            addWarn("maxQueueSize must be positive, keeping " + this.maxQueueSize + " instead of " + maxQueueSize);
+            return;
+        }
         this.maxQueueSize = maxQueueSize;
     }
 
     /**
-     * Sets the batch size for the number of messages to be sent via the API
+     * Sets the batch size for the number of messages to be sent via the API. A value below 1 is ignored with a warning
+     * and the current size is kept.
      *
      * @param batchSize
-     *            size of the message batch
+     *            size of the message batch, 1 or more
      */
     public void setBatchSize(int batchSize) {
+        // flush() would loop without end, sending empty batches or failing on every one, and never send the queued logs
+        if (batchSize <= 0) {
+            addWarn("batchSize must be positive, keeping " + this.batchSize + " instead of " + batchSize);
+            return;
+        }
         this.batchSize = batchSize;
     }
 
@@ -497,12 +509,18 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Sets the maximum wait time for a batch to be sent via the API, in milliseconds.
+     * Sets the maximum wait time for a batch to be sent via the API, in milliseconds. A value below 1 is ignored with a
+     * warning and the current interval is kept.
      *
      * @param batchInterval
-     *            maximum wait time for message batch [ms]
+     *            maximum wait time for message batch [ms], 1 or more
      */
     public void setBatchInterval(int batchInterval) {
+        // scheduleWithFixedDelay() throws on it, which would fail start() or leave a running sender cancelled
+        if (batchInterval <= 0) {
+            addWarn("batchInterval must be positive, keeping " + this.batchInterval + " ms instead of " + batchInterval);
+            return;
+        }
         this.batchInterval = batchInterval;
 
         // Before start(), which schedules the sender with this interval, there is no sender to reschedule
@@ -513,32 +531,50 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Sets the connection timeout of the underlying HTTP client, in milliseconds.
+     * Sets the connection timeout of the underlying HTTP client, in milliseconds. 0 means no timeout. A negative value
+     * is ignored with a warning and the current timeout is kept.
      *
      * @param connectTimeout
-     *            client connection timeout [ms]
+     *            client connection timeout [ms], 0 for no timeout
      */
     public void setConnectTimeout(int connectTimeout) {
+        // HttpURLConnection throws on it: every request would fail and every batch be dropped after its retries
+        if (connectTimeout < 0) {
+            addWarn("connectTimeout must be 0 (no timeout) or more, keeping " + this.connectTimeout + " ms instead of " + connectTimeout);
+            return;
+        }
         this.connectTimeout = connectTimeout;
     }
 
     /**
-     * Sets the read timeout of the underlying HTTP client, in milliseconds.
+     * Sets the read timeout of the underlying HTTP client, in milliseconds. 0 means no timeout. A negative value is
+     * ignored with a warning and the current timeout is kept.
      *
      * @param readTimeout
-     *            client read timeout
+     *            client read timeout [ms], 0 for no timeout
      */
     public void setReadTimeout(int readTimeout) {
+        // HttpURLConnection throws on it: every request would fail and every batch be dropped after its retries
+        if (readTimeout < 0) {
+            addWarn("readTimeout must be 0 (no timeout) or more, keeping " + this.readTimeout + " ms instead of " + readTimeout);
+            return;
+        }
         this.readTimeout = readTimeout;
     }
 
     /**
      * Sets the maximum number of retries for sending logs to Better Stack. After that, current batch of logs will be dropped.
+     * 0 means no retries. A negative value is ignored with a warning and the current number is kept.
      *
      * @param maxRetries
-     *            max number of retries for sending logs
+     *            max number of retries for sending logs, 0 or more
      */
     public void setMaxRetries(int maxRetries) {
+        // Every batch would be dropped before its first attempt
+        if (maxRetries < 0) {
+            addWarn("maxRetries must be 0 (no retries) or more, keeping " + this.maxRetries + " instead of " + maxRetries);
+            return;
+        }
         this.maxRetries = maxRetries;
     }
 
@@ -555,12 +591,18 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     /**
      * Sets the maximum time stop() and the JVM shutdown hook wait for queued logs to be sent, in milliseconds. Logs
      * that could not be sent by then are dropped, so an endpoint that cannot be reached does not hold the shutdown.
-     * 0 means no limit, as for logback's own AsyncAppender.
+     * 0 means no limit, as for logback's own AsyncAppender. A negative value is ignored with a warning and the current
+     * time is kept.
      *
      * @param maxFlushTime
      *            maximum time to send queued logs when stopping [ms], 0 for no limit
      */
     public void setMaxFlushTime(int maxFlushTime) {
+        // Thread.join() throws on it: stop() would fail and the JVM would exit without waiting for the queue to be sent
+        if (maxFlushTime < 0) {
+            addWarn("maxFlushTime must be 0 (no limit) or more, keeping " + this.maxFlushTime + " ms instead of " + maxFlushTime);
+            return;
+        }
         this.maxFlushTime = maxFlushTime;
     }
 

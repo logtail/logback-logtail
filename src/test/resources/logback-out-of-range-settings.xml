@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <appender name="BatchSize" class="com.logtail.logback.LogtailAppender">
+        <appName>BatchSize</appName>
+        <sourceToken>source-token</sourceToken>
+        <ingestUrl>${ENDPOINT}</ingestUrl>
+        <batchSize>0</batchSize>
+    </appender>
+
+    <appender name="MaxQueueSize" class="com.logtail.logback.LogtailAppender">
+        <appName>MaxQueueSize</appName>
+        <sourceToken>source-token</sourceToken>
+        <ingestUrl>${ENDPOINT}</ingestUrl>
+        <maxQueueSize>0</maxQueueSize>
+    </appender>
+
+    <appender name="MaxRetries" class="com.logtail.logback.LogtailAppender">
+        <appName>MaxRetries</appName>
+        <sourceToken>source-token</sourceToken>
+        <ingestUrl>${ENDPOINT}</ingestUrl>
+        <maxRetries>-1</maxRetries>
+    </appender>
+
+    <appender name="ConnectTimeout" class="com.logtail.logback.LogtailAppender">
+        <appName>ConnectTimeout</appName>
+        <sourceToken>source-token</sourceToken>
+        <ingestUrl>${ENDPOINT}</ingestUrl>
+        <connectTimeout>-1</connectTimeout>
+    </appender>
+
+    <appender name="ReadTimeout" class="com.logtail.logback.LogtailAppender">
+        <appName>ReadTimeout</appName>
+        <sourceToken>source-token</sourceToken>
+        <ingestUrl>${ENDPOINT}</ingestUrl>
+        <readTimeout>-1</readTimeout>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="BatchSize" />
+        <appender-ref ref="MaxQueueSize" />
+        <appender-ref ref="MaxRetries" />
+        <appender-ref ref="ConnectTimeout" />
+        <appender-ref ref="ReadTimeout" />
+    </root>
+
+</configuration>
