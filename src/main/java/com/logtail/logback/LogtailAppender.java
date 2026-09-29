@@ -60,7 +60,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected ScheduledExecutorService scheduledExecutorService;
     protected ScheduledFuture<?> scheduledFuture;
     protected Thread shutdownHook;
-    // Deadline (System.nanoTime()) of the flush that stop() or the shutdown hook runs on this thread
+    // Set on the thread whose flush stop() or the shutdown hook wait for: when they give up (System.nanoTime())
     protected final ThreadLocal<Long> flushDeadline = new ThreadLocal<>();
     protected ObjectMapper dataMapper;
     protected Logger logger;
@@ -148,7 +148,8 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
         try {
             do {
-                if (millisLeftToFlush() <= 0) {
+                Long deadline = flushDeadline.get();
+                if (deadline != null && System.nanoTime() - deadline >= 0) {
                     int dropped;
                     synchronized (batch) {
                         dropped = batch.size();
@@ -197,7 +198,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             if (retries > 0) {
                 logger.info("Retrying to send {} logs to Better Stack ({} / {})", flushedSize, retries, maxRetries);
                 try {
-                    TimeUnit.MILLISECONDS.sleep(Math.min(retrySleepMilliseconds, millisLeftToFlush()));
+                    TimeUnit.MILLISECONDS.sleep(retrySleepMilliseconds);
                 } catch (InterruptedException e) {
                     // Continue
                 }
@@ -267,10 +268,8 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         httpURLConnection.setRequestProperty("Charset", "UTF-8");
         httpURLConnection.setRequestProperty("Authorization", String.format("Bearer %s", this.sourceToken));
         httpURLConnection.setRequestMethod("POST");
-        // Within stop() or the shutdown hook, no request may outlast maxFlushTime
-        long millisLeft = Math.max(1, millisLeftToFlush());
-        httpURLConnection.setConnectTimeout((int) Math.min(this.connectTimeout, millisLeft));
-        httpURLConnection.setReadTimeout((int) Math.min(this.readTimeout, millisLeft));
+        httpURLConnection.setConnectTimeout(this.connectTimeout);
+        httpURLConnection.setReadTimeout(this.readTimeout);
         return httpURLConnection;
     }
 
@@ -607,36 +606,36 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
-     * Waits for a flush in progress on another thread, then sends everything still queued - giving up once
-     * maxFlushTime has passed, so an endpoint that cannot be reached does not hold the application's shutdown.
+     * Sends everything still queued, after a flush in progress on another thread, and waits for that for at most
+     * maxFlushTime. The sending is left to a daemon thread, as in logback's own AsyncAppender, so whatever holds it
+     * cannot hold the application's shutdown for longer: an endpoint that cannot be reached, a name server that does
+     * not answer, a connection that stopped taking data.
      */
     protected void flushQueue() {
-        // 0 means no limit, as for logback's own AsyncAppender, which hands maxFlushTime to Thread.join()
-        if (maxFlushTime > 0)
-            flushDeadline.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(maxFlushTime));
-        try {
-            if (!flushLock.tryLock(millisLeftToFlush(), TimeUnit.MILLISECONDS)) {
-                logger.error("Gave up waiting for a flush in progress after maxFlushTime ({} ms), {} logs not sent.", maxFlushTime, batch.size());
-                return;
-            }
+        Thread flushThread = threadFactory.newThread(() -> {
+            // 0 means no limit, here as well as for Thread.join() below
+            if (maxFlushTime > 0)
+                flushDeadline.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(maxFlushTime));
+            flushLock.lock();
             try {
                 flush();
             } finally {
                 flushLock.unlock();
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        } finally {
-            flushDeadline.remove();
-        }
-    }
+        });
+        flushThread.setName("logtail-appender-flush");
+        flushThread.start();
 
-    /**
-     * Milliseconds left until the flush that stop() or the shutdown hook runs on this thread gives up, Long.MAX_VALUE
-     * for any other flush.
-     */
-    protected long millisLeftToFlush() {
-        Long deadline = flushDeadline.get();
-        return deadline == null ? Long.MAX_VALUE : TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+        // An interrupt from before must not skip the wait, it is put back for the caller in the end
+        boolean interrupted = Thread.interrupted();
+        try {
+            flushThread.join(maxFlushTime);
+        } catch (InterruptedException e) {
+            interrupted = true;
+        }
+        if (flushThread.isAlive())
+            logger.error("Gave up waiting for {} queued logs to be sent (maxFlushTime {} ms).", batch.size(), maxFlushTime);
+        if (interrupted)
+            Thread.currentThread().interrupt();
     }
 }
