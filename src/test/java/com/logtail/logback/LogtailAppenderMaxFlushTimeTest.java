@@ -10,12 +10,17 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.SocketTimeoutException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -23,11 +28,14 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * stop() and the JVM shutdown hook send what is queued, but an endpoint that never answers must not hold the
- * application's shutdown for longer than maxFlushTime (1 second in logback-max-flush-time.xml) - unless it is 0,
- * which means no limit, as for logback's own AsyncAppender.
+ * stop() and the JVM shutdown hook send what is queued, but nothing may hold the application's shutdown for longer
+ * than maxFlushTime (1 second in logback-max-flush-time.xml): not an endpoint that never answers, not one that
+ * stopped taking data, not a request without a timeout of its own - unless maxFlushTime is 0, which means no limit,
+ * as for logback's own AsyncAppender.
  */
 public class LogtailAppenderMaxFlushTimeTest {
+
+    private static final Logger LOGGER = new LoggerContext().getLogger(Logger.ROOT_LOGGER_NAME);
 
     @Test
     public void testStopGivesUpOnAnEndpointThatNeverAnswers() throws Exception {
@@ -46,8 +54,92 @@ public class LogtailAppenderMaxFlushTimeTest {
             stopping.join(3000);
 
             assertFalse("stop() must give up after maxFlushTime", stopping.isAlive());
-            assertTrue(appender.batch.isEmpty());
         }
+    }
+
+    @Test
+    public void testStopGivesUpOnAnEndpointThatNeverAnswersARequestWithoutReadTimeout() throws Exception {
+        // readTimeout 0 turns the request's own timeout off, so only maxFlushTime can end the wait for an answer
+        try (ServerSocket silentEndpoint = new ServerSocket(0)) {
+            LogtailAppender appender = new LogtailAppender();
+            appender.setReadTimeout(0);
+            start(appender, "http://127.0.0.1:" + silentEndpoint.getLocalPort());
+            queue(appender, "Never sent");
+
+            assertStopGivesUp(appender);
+        }
+    }
+
+    @Test
+    public void testStopGivesUpOnAnEndpointThatStoppedTakingData() throws Exception {
+        // The batch is bigger than what the connection's buffers take and nobody reads it on the other end. Writing
+        // to a socket has no timeout at all, so only maxFlushTime can end the wait
+        try (ServerSocket silentEndpoint = new ServerSocket()) {
+            silentEndpoint.setReceiveBufferSize(1024);
+            silentEndpoint.bind(new InetSocketAddress("127.0.0.1", 0));
+            LogtailAppender appender = new LogtailAppender();
+            start(appender, "http://127.0.0.1:" + silentEndpoint.getLocalPort());
+            char[] line = new char[4 * 1024];
+            Arrays.fill(line, 'x');
+            String message = new String(line);
+            // One short of the default batchSize, so that no flush starts before stop()
+            for (int i = 0; i < 999; i++)
+                queue(appender, message);
+
+            assertStopGivesUp(appender);
+        }
+    }
+
+    @Test
+    public void testStopSendsTheQueueOnAnInterruptedThread() throws Exception {
+        List<Integer> sentBatchSizes = new CopyOnWriteArrayList<>();
+        LogtailAppender appender = new LogtailAppender() {
+            @Override
+            protected LogtailResponse callHttpURLConnection(int flushedSize) {
+                sentBatchSizes.add(flushedSize);
+                return new LogtailResponse(null, 202);
+            }
+        };
+        start(appender, "http://127.0.0.1");
+        queue(appender, "Sent by an interrupted thread");
+
+        AtomicBoolean interruptedAfterStop = new AtomicBoolean();
+        Thread stopping = new Thread(() -> {
+            Thread.currentThread().interrupt();
+            appender.stop();
+            interruptedAfterStop.set(Thread.currentThread().isInterrupted());
+        });
+        stopping.start();
+        stopping.join(5000);
+
+        assertEquals(Collections.singletonList(1), sentBatchSizes);
+        assertTrue("The interrupt is left for the caller to handle", interruptedAfterStop.get());
+    }
+
+    @Test
+    public void testLogsNotSentInTimeAreDroppedAfterTheRequestInProgress() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        LogtailAppender appender = new LogtailAppender() {
+            @Override
+            protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
+                requests.incrementAndGet();
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    throw new IOException(e);
+                }
+                throw new SocketTimeoutException("Read timed out");
+            }
+        };
+        start(appender, "http://127.0.0.1");
+        queue(appender, "Never sent");
+
+        appender.stop();
+        for (int waited = 0; !appender.batch.isEmpty() && waited < 5000; waited += 50)
+            Thread.sleep(50);
+
+        assertTrue(appender.batch.isEmpty());
+        assertEquals("No retry once the time is up", 1, requests.get());
     }
 
     @Test
@@ -122,6 +214,28 @@ public class LogtailAppenderMaxFlushTimeTest {
             logger.info("First of a full batch");
             logger.info("Second of a full batch");
         }
+    }
+
+    private static void start(LogtailAppender appender, String ingestUrl) {
+        appender.setContext(new LoggerContext());
+        appender.setSourceToken("source-token");
+        appender.setIngestUrl(ingestUrl);
+        appender.setBatchInterval(60000);
+        appender.setMaxFlushTime(500);
+        appender.start();
+    }
+
+    private static void queue(LogtailAppender appender, String message) {
+        appender.doAppend(new LoggingEvent(Logger.FQCN, LOGGER, Level.INFO, message, null, new Object[]{}));
+    }
+
+    private static void assertStopGivesUp(LogtailAppender appender) throws InterruptedException {
+        Thread stopping = new Thread(appender::stop);
+        stopping.setDaemon(true);
+        stopping.start();
+        stopping.join(3000);
+
+        assertFalse("stop() must give up after maxFlushTime", stopping.isAlive());
     }
 
     private static LoggerContext configure(String silentEndpoint, String batchSize) throws JoranException {
