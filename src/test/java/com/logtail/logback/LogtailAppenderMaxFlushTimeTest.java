@@ -6,6 +6,7 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.classic.spi.LoggingEvent;
 import ch.qos.logback.core.joran.spi.JoranException;
+import ch.qos.logback.core.status.Status;
 import org.junit.Test;
 
 import java.io.File;
@@ -21,6 +22,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -31,7 +33,8 @@ import static org.junit.Assert.fail;
  * stop() and the JVM shutdown hook send what is queued, but nothing may hold the application's shutdown for longer
  * than maxFlushTime (1 second in logback-max-flush-time.xml): not an endpoint that never answers, not one that
  * stopped taking data, not a request without a timeout of its own - unless maxFlushTime is 0, which means no limit,
- * as for logback's own AsyncAppender.
+ * as for logback's own AsyncAppender. A negative maxFlushTime, which Thread.join() does not take, is ignored with a
+ * warning.
  */
 public class LogtailAppenderMaxFlushTimeTest {
 
@@ -203,6 +206,32 @@ public class LogtailAppenderMaxFlushTimeTest {
         } finally {
             requestMayComplete.countDown();
         }
+    }
+
+    @Test
+    public void testANegativeMaxFlushTimeKeepsTheDefaultWithAWarning() {
+        List<Integer> sentBatchSizes = new CopyOnWriteArrayList<>();
+        LogtailAppender appender = new LogtailAppender() {
+            @Override
+            protected LogtailResponse callHttpURLConnection(int flushedSize) {
+                sentBatchSizes.add(flushedSize);
+                return new LogtailResponse(null, 202);
+            }
+        };
+        appender.setContext(new LoggerContext());
+        appender.setSourceToken("source-token");
+        appender.setMaxFlushTime(-1);
+        appender.start();
+        queue(appender, "Sent by stop()");
+
+        appender.stop();
+
+        assertEquals(Collections.singletonList(1), sentBatchSizes);
+        assertEquals(Collections.singletonList("maxFlushTime must be 0 (no limit) or more, keeping 30000 ms instead of -1"),
+                appender.getContext().getStatusManager().getCopyOfStatusList().stream()
+                        .filter(status -> status.getLevel() == Status.WARN)
+                        .map(Status::getMessage)
+                        .collect(Collectors.toList()));
     }
 
     /**
