@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <appender name="Zero" class="com.logtail.logback.LogtailAppender">
+        <sourceToken>source-token</sourceToken>
+        <ingestUrl>${ENDPOINT}</ingestUrl>
+        <batchInterval>0</batchInterval>
+    </appender>
+
+    <appender name="Negative" class="com.logtail.logback.LogtailAppender">
+        <sourceToken>source-token</sourceToken>
+        <ingestUrl>${ENDPOINT}</ingestUrl>
+        <batchInterval>-1</batchInterval>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="Zero" />
+        <appender-ref ref="Negative" />
+    </root>
+
+</configuration>
