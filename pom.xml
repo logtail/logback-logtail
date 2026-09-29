@@ -124,6 +124,19 @@
             <artifactId>jackson-databind</artifactId>
             <version>2.22.3</version>
         </dependency>
+        <!-- jackson-core and jackson-annotations at the versions jackson-databind needs: Maven picks the nearest
+             declaration, and without these an application that adds another Jackson module but not databind (e.g.
+             jackson-datatype-jsr310 2.13.5) got that module's older core and annotations under databind 2.22.3 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>2.22.3</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>2.22</version>
+        </dependency>
 
         <dependency>
             <groupId>junit</groupId>
