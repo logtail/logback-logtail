@@ -29,7 +29,7 @@ import static org.junit.Assert.assertTrue;
 /**
  * Batches go out over one kept-alive connection rather than a new TCP (and against the real endpoint, TLS) connection
  * each, also after the endpoint answered with an error, and a kept connection that died while idle costs no batch
- * and sends none twice.
+ * and sends none twice. Neither does an answer that cannot be read to its end.
  */
 public class LogtailAppenderConnectionTest {
 
@@ -101,6 +101,20 @@ public class LogtailAppenderConnectionTest {
         }
     }
 
+    @Test
+    public void testABatchGoesOutOnceWhenTheRestOfItsAnswerNeverArrives() throws Exception {
+        // The 202 says the batch was taken. Not being able to read the answer to its end costs the connection, but
+        // the batch must not go out again
+        String answerWithoutItsBody = "HTTP/1.1 202 Accepted\r\nContent-Length: 2\r\n\r\n";
+        try (RawHttpEndpoint endpoint = new RawHttpEndpoint(answerWithoutItsBody, RawHttpEndpoint.AfterAnswer.SWALLOW_NEXT_REQUESTS)) {
+            LogtailAppenderDecorator appender = sendBatches(endpoint.url(), 300, "First batch", "Second batch");
+
+            assertEquals(Arrays.asList("First batch", "Second batch"), endpoint.messages);
+            assertEquals("No batch needed the appender's own retry", 2, appender.apiCalls);
+            assertFalse(appender.hasException());
+        }
+    }
+
     private static LogtailAppenderDecorator sendBatches(String ingestUrl, int readTimeout, String... messages) {
         LoggerContext context = new LoggerContext();
         LogtailAppenderDecorator appender = new LogtailAppenderDecorator();
@@ -120,8 +134,9 @@ public class LogtailAppenderConnectionTest {
     }
 
     /**
-     * A minimal HTTP/1.1 endpoint on a plain socket, so a test can decide what happens to a connection after its
-     * first answer. It answers without "Connection: close", so HttpURLConnection keeps every connection for reuse.
+     * A minimal HTTP/1.1 endpoint on a plain socket, so a test can decide what it answers and what happens to a
+     * connection after its first answer. It answers without "Connection: close", so HttpURLConnection keeps every
+     * connection for reuse.
      */
     private static class RawHttpEndpoint implements AutoCloseable {
         enum AfterAnswer { CLOSE, RESET_ON_NEXT_REQUEST, SWALLOW_NEXT_REQUESTS }
@@ -131,12 +146,16 @@ public class LogtailAppenderConnectionTest {
         private final List<Socket> connections = new CopyOnWriteArrayList<>();
 
         RawHttpEndpoint(AfterAnswer afterAnswer) throws IOException {
+            this("HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n", afterAnswer);
+        }
+
+        RawHttpEndpoint(String answer, AfterAnswer afterAnswer) throws IOException {
             Thread acceptor = new Thread(() -> {
                 try {
                     while (true) {
                         Socket connection = serverSocket.accept();
                         connections.add(connection);
-                        Thread handler = new Thread(() -> serve(connection, afterAnswer));
+                        Thread handler = new Thread(() -> serve(connection, answer, afterAnswer));
                         handler.setDaemon(true);
                         handler.start();
                     }
@@ -152,7 +171,7 @@ public class LogtailAppenderConnectionTest {
             return "http://127.0.0.1:" + serverSocket.getLocalPort();
         }
 
-        private void serve(Socket connection, AfterAnswer afterAnswer) {
+        private void serve(Socket connection, String answer, AfterAnswer afterAnswer) {
             try {
                 InputStream in = connection.getInputStream();
                 if (readLine(in) == null)
@@ -168,7 +187,7 @@ public class LogtailAppenderConnectionTest {
                     messages.add(line.get("message"));
 
                 OutputStream out = connection.getOutputStream();
-                out.write("HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+                out.write(answer.getBytes(StandardCharsets.US_ASCII));
                 out.flush();
 
                 switch (afterAnswer) {
