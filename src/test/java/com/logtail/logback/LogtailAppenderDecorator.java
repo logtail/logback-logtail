@@ -9,12 +9,17 @@ public class LogtailAppenderDecorator extends LogtailAppender {
     private Exception exception;
     private LogtailResponse response;
     protected int apiCalls = 0;
+    // Calls answered with 202, i.e. apiCalls without the failed ones the appender retried
+    protected int acceptedCalls = 0;
 
     @Override
     protected LogtailResponse callHttpURLConnection(int flushedSize) throws IOException {
         try {
             apiCalls++;
             this.response = super.callHttpURLConnection(flushedSize);
+            if (isOK()) {
+                acceptedCalls++;
+            }
 
             return this.response;
         } catch (Exception e) {
