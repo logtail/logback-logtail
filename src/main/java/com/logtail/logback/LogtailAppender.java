@@ -240,6 +240,9 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
                     // Discarded
                 }
             }
+        } catch (IOException e) {
+            // The endpoint has answered the batch already, only the connection cannot be kept for the next one
+            connection.disconnect();
         }
 
         return response;
