@@ -231,8 +231,8 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         }
         LogtailResponse response = new LogtailResponse(connection.getResponseMessage(), connection.getResponseCode());
 
-        // Reading the response to its end hands the connection back to HttpURLConnection's keep-alive cache for the
-        // next batch - disconnect() would close it, and every batch would pay for a new TCP and TLS handshake
+        // Reading the response to its end hands the connection back to HttpURLConnection's keep-alive cache, so the
+        // next batch skips the TCP and TLS handshake
         try (InputStream responseBody = response.getStatus() < 400 ? connection.getInputStream() : connection.getErrorStream()) {
             if (responseBody != null) {
                 byte[] buffer = new byte[1024];
