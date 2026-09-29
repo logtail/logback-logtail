@@ -109,6 +109,9 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         // The batch is serialized later on another thread: take the formatted message, the thread name and the
         // MDC from the logging thread now, as logback's own AsyncAppender does
         event.prepareForDeferredProcessing();
+        // Not every event takes the MDC there: the Quarkus logback bridge leaves prepareForDeferredProcessing() empty
+        // and its JBoss LogManager records copy the MDC on first access, from whichever thread that happens on
+        event.getMDCPropertyMap();
 
         if (batch.size() < maxQueueSize) {
             batch.add(event);
@@ -438,7 +441,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
      *            your Better Stack source token
      */
     public void setIngestKey(String ingestKey) {
-        if (this.sourceToken == null) {
+        if (this.sourceToken != null) {
             return;
         }
         this.sourceToken = ingestKey;
