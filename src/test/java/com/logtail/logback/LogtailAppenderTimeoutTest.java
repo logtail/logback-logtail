@@ -7,8 +7,8 @@ import org.junit.Test;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.net.SocketTimeoutException;
 
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -40,8 +40,9 @@ public class LogtailAppenderTimeoutTest {
         appender.connectTimeout = 1;
         logger.error("I am no Groot");
         appender.flush();
-        assertTrue(appender.getException() instanceof IOException);
-        assertEquals("connect timed out", appender.getException().getMessage().toLowerCase());
+        // Not its message: a timeout this short can run out before the connection attempt starts, and the exception
+        // has no message then
+        assertTrue(appender.getException() instanceof SocketTimeoutException);
     }
 
     @Test
@@ -52,8 +53,7 @@ public class LogtailAppenderTimeoutTest {
             appender.readTimeout = 1;
             logger.error("I am no Groot");
             appender.flush();
-            assertTrue(appender.getException() instanceof IOException);
-            assertEquals("read timed out", appender.getException().getMessage().toLowerCase());
+            assertTrue(appender.getException() instanceof SocketTimeoutException);
         }
     }
 }
