@@ -47,6 +47,7 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected int readTimeout = 10000;
     protected int maxRetries = 5;
     protected int retrySleepMilliseconds = 300;
+    protected int maxFlushTime = 30000;
 
     protected PatternLayoutEncoder encoder;
 
@@ -60,6 +61,8 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     protected ScheduledExecutorService scheduledExecutorService;
     protected ScheduledFuture<?> scheduledFuture;
     protected Thread shutdownHook;
+    // Set on the thread whose flush stop() or the shutdown hook wait for: when they give up (System.nanoTime())
+    protected final ThreadLocal<Long> flushDeadline = new ThreadLocal<>();
     protected ObjectMapper dataMapper;
     protected Logger logger;
     protected int retrySize = 0;
@@ -126,7 +129,10 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
             if (flushLock.isLocked())
                 return;
 
-            startThread("logtail-appender-flush", new LogtailSender());
+            // A daemon thread like the scheduled sender: at exit, the shutdown hook sends what it leaves behind
+            Thread flushThread = threadFactory.newThread(new LogtailSender());
+            flushThread.setName("logtail-appender-flush");
+            flushThread.start();
         }
     }
 
@@ -146,6 +152,17 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
         try {
             do {
+                Long deadline = flushDeadline.get();
+                if (deadline != null && System.nanoTime() - deadline >= 0) {
+                    int dropped;
+                    synchronized (batch) {
+                        dropped = batch.size();
+                        batch.clear();
+                    }
+                    logger.error("Dropped {} logs that could not be sent within maxFlushTime ({} ms).", dropped, maxFlushTime);
+                    retries = 0;
+                    return;
+                }
                 mustReflush = false;
 
                 int flushedSize = batch.size();
@@ -536,6 +553,18 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
     }
 
     /**
+     * Sets the maximum time stop() and the JVM shutdown hook wait for queued logs to be sent, in milliseconds. Logs
+     * that could not be sent by then are dropped, so an endpoint that cannot be reached does not hold the shutdown.
+     * 0 means no limit, as for logback's own AsyncAppender.
+     *
+     * @param maxFlushTime
+     *            maximum time to send queued logs when stopping [ms], 0 for no limit
+     */
+    public void setMaxFlushTime(int maxFlushTime) {
+        this.maxFlushTime = maxFlushTime;
+    }
+
+    /**
      * Registers a dynamically loaded Module object to ObjectMapper used for serialization of logged data.
      *
      * @param className
@@ -581,25 +610,42 @@ public class LogtailAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         }
         scheduledExecutorService.shutdown();
 
-        // Waits for a flush in progress on another thread, then sends everything still queued
-        flushLock.lock();
-        try {
-            super.stop();
-            flush();
-        } finally {
-            flushLock.unlock();
-        }
+        // Like logback's own AsyncAppender: stop taking events, then send what is queued within maxFlushTime
+        super.stop();
+        flushQueue();
     }
 
     /**
-     * Waits for a flush in progress on another thread, then sends everything still queued.
+     * Sends everything still queued, after a flush in progress on another thread, and waits for that for at most
+     * maxFlushTime. The sending is left to a daemon thread, as in logback's own AsyncAppender, so whatever holds it
+     * cannot hold the application's shutdown for longer: an endpoint that cannot be reached, a name server that does
+     * not answer, a connection that stopped taking data.
      */
     protected void flushQueue() {
-        flushLock.lock();
+        Thread flushThread = threadFactory.newThread(() -> {
+            // 0 means no limit, here as well as for Thread.join() below
+            if (maxFlushTime > 0)
+                flushDeadline.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(maxFlushTime));
+            flushLock.lock();
+            try {
+                flush();
+            } finally {
+                flushLock.unlock();
+            }
+        });
+        flushThread.setName("logtail-appender-flush");
+        flushThread.start();
+
+        // An interrupt from before must not skip the wait, it is put back for the caller in the end
+        boolean interrupted = Thread.interrupted();
         try {
-            flush();
-        } finally {
-            flushLock.unlock();
+            flushThread.join(maxFlushTime);
+        } catch (InterruptedException e) {
+            interrupted = true;
         }
+        if (flushThread.isAlive())
+            logger.error("Gave up waiting for {} queued logs to be sent (maxFlushTime {} ms).", batch.size(), maxFlushTime);
+        if (interrupted)
+            Thread.currentThread().interrupt();
     }
 }
