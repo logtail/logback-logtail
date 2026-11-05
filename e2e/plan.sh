@@ -107,7 +107,9 @@ for leg in $LEGS; do
         leg: $leg, tool: $tool, jdk: $jdk,
         # setup-java exports each JDK home as JAVA_HOME_<major>_X64.
         jdk_major: ($jdk | sub("[.+-].*$"; "")),
-        logback: $logback, jackson: $jackson, slf4j: $slf4j, source: $source, client: $client
+        logback: $logback, jackson: $jackson, slf4j: $slf4j, source: $source, client: $client,
+        # The floor runs on the oldest Ubuntu image GitHub offers, the other legs follow ubuntu-latest.
+        runner: (if $leg == "floor" then "ubuntu-24.04" else "ubuntu-latest" end)
       }]' <<<"$MATRIX")
   done
 done

@@ -10,6 +10,8 @@ name: E2E
 #           and the slf4j-api that logback release was built with
 #   latest  the newest GA JDK with the newest logback-classic, jackson-databind and slf4j-api releases
 #   canary  the next JDK as an early-access build, with a logback, Jackson or slf4j pre-release when one is newer
+# The floor leg runs on the oldest Ubuntu image GitHub offers, latest and canary on ubuntu-latest, so a new runner image
+# is covered as well.
 # Maven or Gradle resolving any version other than the planned one fails the job before a source is created.
 # Pushes to main and pull requests install the client built from the checkout, as the Release workflow builds it,
 # into the local Maven repository, where the examples find the version they pin. The daily schedule takes the newest
@@ -89,7 +91,7 @@ jobs:
     needs: plan
     name: ${{ matrix.name }}
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
