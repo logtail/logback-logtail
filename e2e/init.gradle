@@ -1,0 +1,27 @@
+// Used by e2e/example.sh only, so that examples/gradle/build.gradle stays the plain project a customer copies.
+// Gradle properties it reads:
+//   e2e.jdk             compile and run the example with this JDK, through a toolchain
+//   e2e.mavenLocal      resolve from the local Maven repository first, where mvn install put the checkout's build
+//   e2e.classpathFile   the e2eClasspath task writes the example's runtime classpath there, one jar per line
+allprojects {
+    if (findProperty('e2e.mavenLocal') != null) {
+        repositories {
+            // Only logback-logtail: everything else comes from Maven Central, as for a customer.
+            mavenLocal {
+                content {
+                    includeGroup 'com.logtail'
+                }
+            }
+        }
+    }
+    plugins.withId('java') {
+        extensions.getByType(JavaPluginExtension).toolchain.languageVersion = JavaLanguageVersion.of(findProperty('e2e.jdk') as String)
+        tasks.register('e2eClasspath') {
+            def classpath = configurations.named('runtimeClasspath')
+            def file = findProperty('e2e.classpathFile') as String
+            doLast {
+                new File(file).text = classpath.get().files.collect { it.absolutePath }.join('\n') + '\n'
+            }
+        }
+    }
+}

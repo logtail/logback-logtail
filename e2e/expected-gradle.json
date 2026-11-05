@@ -1,0 +1,9 @@
+[
+  {"level": "INFO", "message": "Hello World!", "contains": {"app": "Better Stack Gradle example app", "meta": {"logger": "com.logtail.example.App", "requestId": "example-request-1"}, "runtime": {"thread": "main"}}},
+  {"level": "INFO", "message": "Point A", "contains": {"args": [{"X": 3, "Y": 4}]}},
+  {"level": "INFO", "message": "Point B", "contains": {"args": [{"X": 512, "Y": 768}]}},
+  {"level": "WARN", "message": "Point C is outside the 1024 x 1024 map.", "contains": {"args": [{"X": 2048, "Y": 1536}]}},
+  {"level": "INFO", "message": "Snow White met a few dwarfs.", "contains": {"args": ["Doc", "Sleepy", "Dopey", "Grumpy", "Happy", "Bashful", "Sneezy"]}},
+  {"level": "ERROR", "message": "Logging a thrown exception.", "contains": {"throwable": {"class": "java.lang.RuntimeException", "message": "An error occurred.", "stackTrace": [{"StackTraceElement": {"ClassName": "com.logtail.example.App", "MethodName": "main", "FileName": "App.java"}}], "cause": {"class": "java.lang.Exception", "message": "The original cause."}}}},
+  {"level": "INFO", "message": "Logging local datetime serialized via JavaTimeModule.", "contains": {"args": [[2026, 1, 1, 12, 30]]}}
+]
