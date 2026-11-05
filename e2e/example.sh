@@ -50,8 +50,8 @@ case "$TOOL" in
     # setup-java installed counts, Gradle neither looks for others nor downloads one. Deprecation warnings are
     # shown one by one: the example has to keep working on the next Gradle.
     ARGS=(--console=plain --warning-mode=all --init-script "$ROOT/e2e/init.gradle" -Pe2e.jdk="$JDK"
-      -Porg.gradle.java.installations.fromEnv="$JDK_HOME_VAR" -Porg.gradle.java.installations.auto-detect=false
-      -Porg.gradle.java.installations.auto-download=false
+      -Dorg.gradle.java.installations.fromEnv="$JDK_HOME_VAR" -Dorg.gradle.java.installations.auto-detect=false
+      -Dorg.gradle.java.installations.auto-download=false
       -PlogbackVersion="$LOGBACK" -PjacksonVersion="$JACKSON" -Pslf4jVersion="$SLF4J")
     [ "$CLIENT_FROM" != checkout ] || ARGS+=(-Pe2e.mavenLocal)
     case "$1" in
