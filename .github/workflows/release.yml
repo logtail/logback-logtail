@@ -71,14 +71,8 @@ jobs:
           cache: maven
 
       - name: Build with Maven
-        uses: nick-fields/retry@v4
-        with:
-          timeout_seconds: 300
-          max_attempts: 5
-          command: mvn -B clean package --file pom.xml
-        env:
-          BETTER_STACK_SOURCE_TOKEN: ${{ secrets.BETTER_STACK_SOURCE_TOKEN }}
-          BETTER_STACK_INGESTING_HOST: ${{ secrets.BETTER_STACK_INGESTING_HOST }}
+        timeout-minutes: 5
+        run: mvn -B clean package --file pom.xml
 
   build:
     name: Bump and build
