@@ -10,14 +10,14 @@ import org.junit.Test;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
+import java.io.IOException;
+import java.util.Collections;
 import java.util.UUID;
 
 import static org.junit.Assert.*;
 
 /**
- * ! BETTER_STACK_SOURCE_TOKEN must be set as an environment variable before launching the test !
- * BETTER_STACK_INGESTING_HOST can be set to the source's ingesting host (defaults to in.logs.betterstack.com)
- *
+ * Sends to a {@link RecordingEndpoint} in the test JVM, not to Better Stack.
  *
  * @author tomas@logtail.com
  */
@@ -27,8 +27,12 @@ public class LogtailAppenderIntegrationTest {
 
     private LogtailAppenderDecorator appender;
 
+    private RecordingEndpoint endpoint;
+
     @Before
-    public void init() throws JoranException {
+    public void init() throws JoranException, IOException {
+        endpoint = new RecordingEndpoint();
+
         LoggerContext loggerContext = ((LoggerContext) LoggerFactory.getILoggerFactory());
         loggerContext.reset();
 
@@ -38,11 +42,8 @@ public class LogtailAppenderIntegrationTest {
 
         this.appender = new LogtailAppenderDecorator();
         this.appender.setContext((LoggerContext) LoggerFactory.getILoggerFactory());
-        this.appender.setSourceToken(System.getenv("BETTER_STACK_SOURCE_TOKEN"));
-        String ingestingHost = System.getenv("BETTER_STACK_INGESTING_HOST");
-        if (ingestingHost != null && !ingestingHost.isEmpty()) {
-            this.appender.setIngestUrl(ingestingHost.startsWith("http") ? ingestingHost : "https://" + ingestingHost);
-        }
+        this.appender.setSourceToken("source-token");
+        this.appender.setIngestUrl(endpoint.url());
         this.appender.start();
 
         this.logger.addAppender(appender);
@@ -51,6 +52,8 @@ public class LogtailAppenderIntegrationTest {
     @After
     public void tearDown() {
         this.logger.detachAppender(appender);
+        this.appender.stop();
+        endpoint.close();
     }
 
     @Test
@@ -60,6 +63,7 @@ public class LogtailAppenderIntegrationTest {
         this.logger.info("I am Groot");
         this.appender.flush();
         isOk();
+        assertEquals(Collections.singletonList("I am Groot"), endpoint.messages());
     }
 
     @Test
@@ -69,6 +73,7 @@ public class LogtailAppenderIntegrationTest {
         this.logger.info("I am { \"name\": \"Groot\", \"id\": \"GROOT\" }");
         this.appender.flush();
         isOk();
+        assertEquals(Collections.singletonList("I am { \"name\": \"Groot\", \"id\": \"GROOT\" }"), endpoint.messages());
     }
 
     @Test
@@ -78,6 +83,7 @@ public class LogtailAppenderIntegrationTest {
         this.logger.warn("I AM groot");
         this.appender.flush();
         isOk();
+        assertEquals(Collections.singletonList("I AM groot"), endpoint.messages());
     }
 
     @Test
@@ -87,6 +93,7 @@ public class LogtailAppenderIntegrationTest {
         this.logger.error("I am Groot?", new RuntimeException("GROOT!"));
         this.appender.flush();
         isOk();
+        assertEquals(Collections.singletonList("I am Groot?"), endpoint.messages());
     }
 
     @Test
@@ -117,6 +124,7 @@ public class LogtailAppenderIntegrationTest {
         appender.awaitFlushCompletion();
 
         isOk();
+        assertEquals(Collections.singletonList(1000), endpoint.batchSizes());
     }
 
     @Test
@@ -137,6 +145,7 @@ public class LogtailAppenderIntegrationTest {
         appender.awaitFlushCompletion();
 
         isOk();
+        assertEquals(Collections.singletonList("Single Batch Groot"), endpoint.messages());
     }
 
     private void isOk() {

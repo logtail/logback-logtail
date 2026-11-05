@@ -2,8 +2,8 @@ package com.logtail.logback;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.LoggerFactory;
@@ -13,21 +13,34 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 
+import java.io.IOException;
+
 /**
- * ! BETTER_STACK_SOURCE_TOKEN  must be set as an environment variable before launching the test !
- * 
+ * Sends to a {@link RecordingEndpoint} in the test JVM, not to Better Stack.
+ *
  * @author tomas@logtail.com
  */
 public class LogtailAppenderXmlConfigTest {
 
+    private RecordingEndpoint endpoint;
+
     @Before
-    public void init() throws JoranException {
+    public void init() throws JoranException, IOException {
+        endpoint = new RecordingEndpoint();
+
         LoggerContext loggerContext = ((LoggerContext) LoggerFactory.getILoggerFactory());
         loggerContext.reset();
+        loggerContext.putProperty("ENDPOINT", endpoint.url());
 
         JoranConfigurator configurator = new JoranConfigurator();
         configurator.setContext(loggerContext);
         configurator.doConfigure("src/test/resources/logback-prod.xml");
+    }
+
+    @After
+    public void tearDown() {
+        ((LoggerContext) LoggerFactory.getILoggerFactory()).reset();
+        endpoint.close();
     }
 
     @Test
@@ -38,8 +51,8 @@ public class LogtailAppenderXmlConfigTest {
         LogtailAppender appender = (LogtailAppender) rootLogger.getAppender("Logtail");
         assertNotNull(appender);
 
-        assertNotNull(appender.ingestUrl);
-        assertNotNull(appender.sourceToken);
+        assertEquals(endpoint.url(), appender.ingestUrl);
+        assertEquals("source-token", appender.sourceToken);
         assertEquals("BetterStackTest", appender.appName);
 
         assertEquals(2, appender.mdcFields.size());

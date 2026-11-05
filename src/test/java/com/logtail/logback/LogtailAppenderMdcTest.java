@@ -6,9 +6,12 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.LoggingEvent;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.MDC;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -19,9 +22,22 @@ import static org.junit.Assert.assertEquals;
 
 /**
  * Events are queued in append() and serialized later on the sender thread, so everything taken from the logging
- * thread (its MDC, its name) has to be captured while the event is still on that thread.
+ * thread (its MDC, its name) has to be captured while the event is still on that thread. The appender sends to a
+ * {@link RecordingEndpoint} in the test JVM, not to Better Stack.
  */
 public class LogtailAppenderMdcTest {
+
+    private RecordingEndpoint endpoint;
+
+    @Before
+    public void init() throws IOException {
+        endpoint = new RecordingEndpoint();
+    }
+
+    @After
+    public void tearDown() {
+        endpoint.close();
+    }
 
     @Test
     public void testMdcAndThreadNameAreCapturedWhenTheEventIsQueued() throws Exception {
@@ -29,6 +45,7 @@ public class LogtailAppenderMdcTest {
         LogtailAppender appender = new LogtailAppender();
         appender.setContext(context);
         appender.setSourceToken("source-token");
+        appender.setIngestUrl(endpoint.url());
         appender.setMdcFields("requestId");
         appender.setMdcTypes("string");
         appender.start();
@@ -52,6 +69,7 @@ public class LogtailAppenderMdcTest {
         }, "logtail-appender");
         sender.start();
         sender.join();
+        appender.stop();
 
         Map<String, Object> line = new ObjectMapper().readValue(json.get(), new TypeReference<List<Map<String, Object>>>() {}).get(0);
         Map<String, Object> meta = new HashMap<>();
@@ -67,6 +85,7 @@ public class LogtailAppenderMdcTest {
         LogtailAppender appender = new LogtailAppender();
         appender.setContext(context);
         appender.setSourceToken("source-token");
+        appender.setIngestUrl(endpoint.url());
         appender.setMdcFields("requestId");
         appender.setMdcTypes("string");
         appender.start();
@@ -106,6 +125,7 @@ public class LogtailAppenderMdcTest {
         }, "logtail-appender");
         sender.start();
         sender.join();
+        appender.stop();
 
         Map<String, Object> line = new ObjectMapper().readValue(json.get(), new TypeReference<List<Map<String, Object>>>() {}).get(0);
         Map<String, Object> meta = new HashMap<>();

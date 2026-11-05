@@ -4,18 +4,21 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
+import java.io.IOException;
+import java.util.Collections;
 import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * ! BETTER_STACK_SOURCE_TOKEN must be set as an environment variable before launching the test !
+ * Sends to a {@link RecordingEndpoint} in the test JVM, not to Better Stack.
  *
  * @author tomas@logtail.com
  */
@@ -25,10 +28,15 @@ public class LogtailAppenderBatchConfigSizeTest {
 
     private LogtailAppenderDecorator appender;
 
+    private RecordingEndpoint endpoint;
+
     @Before
-    public void init() throws JoranException {
+    public void init() throws JoranException, IOException {
+        endpoint = new RecordingEndpoint();
+
         LoggerContext loggerContext = ((LoggerContext) LoggerFactory.getILoggerFactory());
         loggerContext.reset();
+        loggerContext.putProperty("ENDPOINT", endpoint.url());
 
         JoranConfigurator configurator = new JoranConfigurator();
         configurator.setContext(loggerContext);
@@ -37,6 +45,12 @@ public class LogtailAppenderBatchConfigSizeTest {
         Logger rootLogger = (Logger) LoggerFactory.getLogger("ROOT");
         appender = (LogtailAppenderDecorator) rootLogger.getAppender("Logtail");
         assertEquals(200, appender.getBatchSize());
+    }
+
+    @After
+    public void tearDown() {
+        ((LoggerContext) LoggerFactory.getILoggerFactory()).reset();
+        endpoint.close();
     }
 
     @Test
@@ -61,12 +75,12 @@ public class LogtailAppenderBatchConfigSizeTest {
         MDC.put("requestTime", 199 + "");
         this.logger.info(batchRunId + " Custom batch size Final Batch Groot ");
 
-        // The 200th line sends the batch on another thread. Wait for that flush instead of a fixed time: a request to
-        // the real endpoint now and then takes several seconds, or fails and is retried by the appender
+        // The 200th line sends the batch on another thread
         this.appender.awaitFlushCompletion();
 
         isOk();
         assertEquals(1, this.appender.acceptedCalls);
+        assertEquals(Collections.singletonList(200), endpoint.batchSizes());
     }
 
     private void isOk() {
