@@ -47,8 +47,9 @@ case "$TOOL" in
     cd "$ROOT/examples/gradle"
     # Gradle runs on JAVA_HOME and compiles and runs the example on the leg's JDK through a toolchain that
     # e2e/init.gradle sets up, so that build.gradle stays the plain project a customer copies. Only the JDK that
-    # setup-java installed counts, Gradle neither looks for others nor downloads one.
-    ARGS=(--console=plain --init-script "$ROOT/e2e/init.gradle" -Pe2e.jdk="$JDK"
+    # setup-java installed counts, Gradle neither looks for others nor downloads one. Deprecation warnings are
+    # shown one by one: the example has to keep working on the next Gradle.
+    ARGS=(--console=plain --warning-mode=all --init-script "$ROOT/e2e/init.gradle" -Pe2e.jdk="$JDK"
       -Porg.gradle.java.installations.fromEnv="$JDK_HOME_VAR" -Porg.gradle.java.installations.auto-detect=false
       -Porg.gradle.java.installations.auto-download=false
       -PlogbackVersion="$LOGBACK" -PjacksonVersion="$JACKSON" -Pslf4jVersion="$SLF4J")
