@@ -108,6 +108,9 @@ jobs:
       SLF4J: ${{ matrix.slf4j }}
       CLIENT_FROM: ${{ matrix.source }}
       CLIENT: ${{ matrix.client }}
+      # Maven Central answers a burst of downloads from a shared runner address with HTTP 429. Maven 3.9 retries 3 times
+      # within 30 s by default. 6 retries 10 s apart wait up to 210 s.
+      MAVEN_ARGS: -Daether.connector.http.retryHandler.count=6 -Daether.connector.http.retryHandler.interval=10000
 
     steps:
       - name: "[Setup] Checkout code"
@@ -122,6 +125,17 @@ jobs:
           java-version: |
             ${{ matrix.jdk }}
             21
+
+      # The local Maven repository stays between runs, so that a job downloads only what changed since the last one.
+      # logback-logtail itself is left out: every run takes it fresh from Maven Central or from the checkout's build.
+      - name: "[Setup] Cache the local Maven repository"
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/com/logtail
+          key: e2e-m2-${{ matrix.runner }}-${{ matrix.leg }}-${{ matrix.tool }}-${{ matrix.jdk }}-${{ matrix.logback }}-${{ matrix.jackson }}-${{ matrix.slf4j }}
+          restore-keys: e2e-m2-${{ matrix.runner }}-${{ matrix.leg }}-${{ matrix.tool }}-
 
       - name: "[Setup] Install the client"
         run: |
