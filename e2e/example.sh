@@ -54,7 +54,7 @@ case "$TOOL" in
     ARGS=(--console=plain --warning-mode=all --init-script "$ROOT/e2e/init.gradle" -Pe2e.jdk="$JDK"
       -Dorg.gradle.java.installations.fromEnv="$JDK_HOME_VAR" -Dorg.gradle.java.installations.auto-detect=false
       -Dorg.gradle.java.installations.auto-download=false
-      -Dorg.gradle.internal.network.retry.max.attempts=6 -Dorg.gradle.internal.network.retry.initial.backOff=5000
+      -Dorg.gradle.internal.repository.max.tentatives=6 -Dorg.gradle.internal.repository.initial.backoff=5000
       -PlogbackVersion="$LOGBACK" -PjacksonVersion="$JACKSON" -Pslf4jVersion="$SLF4J")
     [ "$CLIENT_FROM" != checkout ] || ARGS+=(-Pe2e.mavenLocal)
     case "$1" in

@@ -129,14 +129,17 @@ jobs:
             ${{ matrix.jdk }}
             21
 
-      # The local Maven repository stays between runs, so that a job downloads only what changed since the last one.
-      # logback-logtail itself is left out: every run takes it fresh from Maven Central or from the checkout's build.
-      - name: "[Setup] Cache the local Maven repository"
+      # The local Maven repository and Gradle's dependency cache stay between runs, so that a job downloads only what
+      # changed since the last one. logback-logtail itself is left out of the Maven repository: every run takes it fresh
+      # from Maven Central or from the checkout's build. Gradle takes the checkout's build from the Maven repository too,
+      # and a release it caches never changes.
+      - name: "[Setup] Cache the downloaded dependencies"
         uses: actions/cache@v6
         with:
           path: |
             ~/.m2/repository
             !~/.m2/repository/com/logtail
+            ~/.gradle/caches/modules-2
           key: e2e-m2-${{ matrix.runner }}-${{ matrix.leg }}-${{ matrix.tool }}-${{ matrix.jdk }}-${{ matrix.logback }}-${{ matrix.jackson }}-${{ matrix.slf4j }}
           restore-keys: e2e-m2-${{ matrix.runner }}-${{ matrix.leg }}-${{ matrix.tool }}-
 
