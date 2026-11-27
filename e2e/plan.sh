@@ -27,7 +27,7 @@ pom_property() { sed -n "s:.*<$1>\(.*\)</$1>.*:\1:p" "$ROOT/pom.xml" | head -n 1
 # Every version of group:artifact $1 on Maven Central, one per line. Not from search.maven.org: its index lags months
 # behind Maven Central and still names logback 1.5.18 and logback-logtail 0.3.4 as the newest.
 versions() {
-  curl -fsS -m 60 "$CENTRAL/$(tr . / <<<"${1%:*}")/${1#*:}/maven-metadata.xml" | sed -n 's:.*<version>\(.*\)</version>.*:\1:p'
+  curl -fsS -m 60 --retry 6 --retry-delay 10 "$CENTRAL/$(tr . / <<<"${1%:*}")/${1#*:}/maven-metadata.xml" | sed -n 's:.*<version>\(.*\)</version>.*:\1:p'
 }
 
 # Whether version $1 sorts above version $2.
@@ -57,10 +57,10 @@ jackson_versions() {
 
 # The slf4j-api version logback release $1 was built with.
 slf4j_of_logback() {
-  curl -fsS -m 60 "$CENTRAL/ch/qos/logback/logback-parent/$1/logback-parent-$1.pom" | sed -n 's:.*<slf4j.version>\(.*\)</slf4j.version>.*:\1:p' | head -n 1
+  curl -fsS -m 60 --retry 6 --retry-delay 10 "$CENTRAL/ch/qos/logback/logback-parent/$1/logback-parent-$1.pom" | sed -n 's:.*<slf4j.version>\(.*\)</slf4j.version>.*:\1:p' | head -n 1
 }
 
-ADOPTIUM=$(curl -fsS -m 60 https://api.adoptium.net/v3/info/available_releases)
+ADOPTIUM=$(curl -fsS -m 60 --retry 6 --retry-delay 10 https://api.adoptium.net/v3/info/available_releases)
 # The client the examples take: the checkout's version (mvn install puts it into the local Maven repository), or the
 # newest release on Maven Central, which the examples must already pin.
 if [ "${CLIENT_FROM:-checkout}" = central ]; then
