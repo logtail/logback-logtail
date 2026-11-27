@@ -37,4 +37,8 @@ jobs:
             restore-keys: ${{ runner.os }}-m2
       -  name: Build with Maven
          timeout-minutes: 5
+         # Maven Central answers a burst of downloads from a shared runner address with HTTP 429.
+         # 6 retries 10 s apart wait up to 210 s, instead of 3 retries within 30 s.
+         env:
+            MAVEN_ARGS: -Daether.connector.http.retryHandler.count=6 -Daether.connector.http.retryHandler.interval=10000
          run: mvn -B clean package --file pom.xml
