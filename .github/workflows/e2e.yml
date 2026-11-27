@@ -108,9 +108,12 @@ jobs:
       SLF4J: ${{ matrix.slf4j }}
       CLIENT_FROM: ${{ matrix.source }}
       CLIENT: ${{ matrix.client }}
-      # Maven Central answers a burst of downloads from a shared runner address with HTTP 429. Maven 3.9 retries 3 times
-      # within 30 s by default. 6 retries 10 s apart wait up to 210 s.
-      MAVEN_ARGS: -Daether.connector.http.retryHandler.count=6 -Daether.connector.http.retryHandler.interval=10000
+      # Maven Central answers a burst of downloads from a shared runner address with HTTP 429. Maven retries 3 times
+      # within 30 s by default. 6 retries 10 s apart wait up to 210 s. Maven 3.9 reads the aether.connector names,
+      # Maven 3.10 and later read the aether.transport names.
+      MAVEN_ARGS: >-
+        -Daether.connector.http.retryHandler.count=6 -Daether.connector.http.retryHandler.interval=10000
+        -Daether.transport.http.retryHandler.count=6 -Daether.transport.http.retryHandler.interval=10000
 
     steps:
       - name: "[Setup] Checkout code"
