@@ -49,9 +49,12 @@ case "$TOOL" in
     # e2e/init.gradle sets up, so that build.gradle stays the plain project a customer copies. Only the JDK that
     # setup-java installed counts, Gradle neither looks for others nor downloads one. Deprecation warnings are
     # shown one by one: the example has to keep working on the next Gradle.
+    # Maven Central answers a burst of downloads from a shared runner address with HTTP 429. Gradle tries 3 times
+    # within 3 s by default. 6 attempts, from 5 s apart and doubling, wait up to 155 s.
     ARGS=(--console=plain --warning-mode=all --init-script "$ROOT/e2e/init.gradle" -Pe2e.jdk="$JDK"
       -Dorg.gradle.java.installations.fromEnv="$JDK_HOME_VAR" -Dorg.gradle.java.installations.auto-detect=false
       -Dorg.gradle.java.installations.auto-download=false
+      -Dorg.gradle.internal.repository.max.tentatives=6 -Dorg.gradle.internal.repository.initial.backoff=5000
       -PlogbackVersion="$LOGBACK" -PjacksonVersion="$JACKSON" -Pslf4jVersion="$SLF4J")
     [ "$CLIENT_FROM" != checkout ] || ARGS+=(-Pe2e.mavenLocal)
     case "$1" in

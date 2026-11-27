@@ -5,7 +5,8 @@ name: E2E
 # tells customers to) with that source's token and ingesting host, reads the stored rows back through the testing
 # team's SQL API connection, checks them exactly against e2e/expected-<maven or gradle>.json (nothing missing, extra
 # or duplicated), and deletes the source again, together with sources of earlier runs left behind for more than 3
-# hours. e2e/plan.sh plans three legs, each with both example projects:
+# hours. Before the test jobs start, one fetch job downloads every leg's dependencies, so that Maven Central sees one
+# runner instead of six. e2e/plan.sh plans three legs, each with both example projects:
 #   floor   JDK 8 (pom.xml's maven.compiler.source) with logback-classic and jackson-databind as pom.xml pins them,
 #           and the slf4j-api that logback release was built with
 #   latest  the newest GA JDK with the newest logback-classic, jackson-databind and slf4j-api releases
@@ -62,11 +63,20 @@ on:
 permissions:
   contents: read
 
+env:
+  # Maven Central answers a burst of downloads from a shared runner address with HTTP 429. Maven retries 3 times
+  # within 30 s by default. 6 retries 10 s apart wait up to 210 s. Maven 3.9 reads the aether.connector names,
+  # Maven 3.10 and later read the aether.transport names.
+  MAVEN_ARGS: >-
+    -Daether.connector.http.retryHandler.count=6 -Daether.connector.http.retryHandler.interval=10000
+    -Daether.transport.http.retryHandler.count=6 -Daether.transport.http.retryHandler.interval=10000
+
 jobs:
   plan:
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      jdks: ${{ steps.plan.outputs.jdks }}
 
     steps:
       - name: "[Setup] Checkout code"
@@ -85,13 +95,87 @@ jobs:
         run: |
           MATRIX=$(bash e2e/plan.sh)
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          # Every JDK the legs use, and JDK 21 last, so that it becomes JAVA_HOME.
+          { echo 'jdks<<EOF'; jq -r '[.[].jdk | select(. != "21")] | unique | .[], "21"' <<<"$MATRIX"; echo EOF; } >> "$GITHUB_OUTPUT"
           jq . <<<"$MATRIX"
 
-  test:
+  # Downloads every dependency of every leg once, on one runner, and hands them to the test jobs as a cache. Maven
+  # Central answers a burst of downloads from GitHub's shared runner addresses with HTTP 429, and six jobs that each
+  # download everything at the same moment are such a burst. The cache of the previous run is the starting point, so
+  # this job downloads only what changed since then.
+  fetch:
     needs: plan
-    name: ${{ matrix.name }}
     # Forks and Dependabot get no repository secrets, so their pull requests run only the plan.
     if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+
+    steps:
+      - name: "[Setup] Checkout code"
+        uses: actions/checkout@v7
+
+      - name: "[Setup] The legs' JDKs and JDK 21"
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ needs.plan.outputs.jdks }}
+
+      # A new key for every run: the cache always holds what this run's legs need. A re-run of failed test jobs keeps
+      # this job's output, so it restores the same cache.
+      - name: "[Setup] Name this run's cache"
+        id: key
+        run: echo "key=e2e-deps-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
+
+      - name: "[Setup] Restore the dependencies of the previous run"
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/com/logtail
+            ~/.gradle/caches/modules-2
+          key: ${{ steps.key.outputs.key }}
+          restore-keys: e2e-deps-
+
+      - name: "[Setup] Download what the legs need"
+        env:
+          MATRIX: ${{ needs.plan.outputs.matrix }}
+        run: |
+          # The client build's own plugins, and in the local Maven repository the client the examples pin.
+          if [ "$(jq -r '.[0].source' <<<"$MATRIX")" = checkout ]; then
+            mvn -B -ntp clean install -Dmaven.test.skip=true
+          fi
+          # exec:java runs the Maven example. The example does not pin the plugin, so Maven looks up its newest version.
+          (cd examples/maven && mvn -B -ntp exec:help -Ddetail=false)
+          # Each leg's compile and runtime classpath, the way the test job resolves it. A 429 can outlast the build
+          # tool's own retries, so a leg gets two more tries, 2 minutes apart. What it downloaded before stays.
+          jq -c '.[]' <<<"$MATRIX" | while read -r leg; do
+            echo "::group::$(jq -r .name <<<"$leg")"
+            for try in 1 2 3; do
+              TOOL=$(jq -r .tool <<<"$leg") JDK=$(jq -r .jdk_major <<<"$leg") LOGBACK=$(jq -r .logback <<<"$leg") \
+                JACKSON=$(jq -r .jackson <<<"$leg") SLF4J=$(jq -r .slf4j <<<"$leg") CLIENT_FROM=$(jq -r .source <<<"$leg") \
+                bash e2e/example.sh classpath </dev/null && break
+              [ "$try" -lt 3 ] || exit 1
+              sleep 120
+            done
+            echo "::endgroup::"
+          done
+          # Gradle's daemon holds locks in its cache until it stops.
+          gradle --stop
+
+      - name: "[Setup] Save the dependencies for the test jobs"
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/com/logtail
+            ~/.gradle/caches/modules-2
+          key: ${{ steps.key.outputs.key }}
+
+  test:
+    needs: [plan, fetch]
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
@@ -122,6 +206,19 @@ jobs:
           java-version: |
             ${{ matrix.jdk }}
             21
+
+      # What the fetch job downloaded for all legs. logback-logtail itself is left out of the Maven repository: every
+      # job takes it fresh from Maven Central or from the checkout's build. Gradle takes the checkout's build from the
+      # Maven repository too, and a release it caches never changes.
+      - name: "[Setup] Restore the dependencies the fetch job downloaded"
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/com/logtail
+            ~/.gradle/caches/modules-2
+          key: ${{ needs.fetch.outputs.key }}
+          fail-on-cache-miss: true
 
       - name: "[Setup] Install the client"
         run: |
@@ -224,7 +321,7 @@ jobs:
 
   notify-linear:
     if: ${{ failure() && (github.ref == 'refs/heads/main' || github.event_name == 'schedule') }}
-    needs: [test]
+    needs: [fetch, test]
     # The notifier reads the failed jobs, their summary artifacts and their annotations.
     permissions:
       contents: read
